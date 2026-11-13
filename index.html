@@ -1,0 +1,889 @@
+<title>The CYLOS System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Michroma&family=Inter+Tight:wght@300;400;500&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500&display=swap">
+<style>
+/* Layout: one full-screen WebGL sky. Survey-plate HUD on top: brand + survey ledger (top), observation log (bottom left), body dossier (right, bottom sheet on phones), time / view / zoom dock (bottom). Target brackets track every body. */
+:root {
+  --void: #04050a;
+  --panel: rgba(9, 11, 18, .74);
+  --bone: #ebe6da;
+  --dim: #8f8b83;
+  --line: rgba(235, 230, 218, .14);
+  --line-2: rgba(235, 230, 218, .28);
+  --star: #f1cf98;
+  --f-display: "Michroma", "Eurostile", "Arial Black", sans-serif;
+  --f-ui: "Inter Tight", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --f-log: "Space Grotesk", "Inter Tight", "Helvetica Neue", Arial, sans-serif;
+  --ease: cubic-bezier(.2, .7, .1, 1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--void); color: var(--bone); font: 300 14px/1.5 var(--f-ui); overflow: hidden; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--star); outline-offset: 3px; }
+::selection { background: var(--star); color: var(--void); }
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#gl.dragging { cursor: grabbing; }
+#gl.hovering { cursor: pointer; }
+
+/* labels (target brackets) */
+#labels { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.tgt { position: absolute; left: 0; top: 0; opacity: 0; pointer-events: auto; cursor: pointer; border: 0; background: none; padding: 0; transform: translate(-50%, -50%); transition: opacity .3s; }
+.tgt .box { position: absolute; inset: 0; }
+.tgt .box i { position: absolute; width: 9px; height: 9px; border-color: var(--a, var(--bone)); border-style: solid; border-width: 0; opacity: 0; transition: opacity .25s, width .25s, height .25s; }
+.tgt .box i:nth-child(1) { left: 0; top: 0; border-left-width: 1px; border-top-width: 1px; }
+.tgt .box i:nth-child(2) { right: 0; top: 0; border-right-width: 1px; border-top-width: 1px; }
+.tgt .box i:nth-child(3) { left: 0; bottom: 0; border-left-width: 1px; border-bottom-width: 1px; }
+.tgt .box i:nth-child(4) { right: 0; bottom: 0; border-right-width: 1px; border-bottom-width: 1px; }
+.tgt .lbl { position: absolute; left: calc(100% + 8px); top: -2px; white-space: nowrap; text-align: left; }
+.tgt .lbl b { display: block; font: 400 10px/1.3 var(--f-display); letter-spacing: .16em; color: var(--bone); }
+.tgt .lbl small { display: block; font: 400 10px/1.4 var(--f-mono); color: var(--dim); letter-spacing: .04em; }
+.tgt .lbl em { font-style: normal; color: var(--a); text-transform: uppercase; }
+.tgt:hover .box i, .tgt.on .box i, .tgt:focus-visible .box i { opacity: 1; width: 13px; height: 13px; }
+.tgt.focus .lbl { display: none; }
+.tgt.sub .lbl b { font-size: 9px; }
+.tgt.sub .box { display: none; }
+.tgt.sub::before { content: ""; position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: var(--a); }
+.tgt.sub .lbl { left: 10px; top: -8px; }
+/* marker */
+.marker { position: absolute; left: 0; top: 0; opacity: 0; transform: translate(-50%, -50%); pointer-events: auto; border: 0; background: none; cursor: pointer; padding: 0; transition: opacity .4s; }
+.marker .ring { display: block; width: 46px; height: 46px; border: 1px solid var(--star); border-radius: 50%; position: relative; animation: ping 2.6s var(--ease) infinite; }
+.marker .ring::after { content: ""; position: absolute; inset: 19px; border-radius: 50%; background: var(--star); }
+.marker .lbl { position: absolute; left: 58px; top: 4px; white-space: nowrap; text-align: left; }
+.marker b { display: block; font: 400 11px/1.3 var(--f-display); letter-spacing: .2em; }
+.marker small { font: 400 10px/1.4 var(--f-mono); color: var(--dim); }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(241, 207, 152, .5); } 100% { box-shadow: 0 0 0 26px rgba(241, 207, 152, 0); } }
+
+/* chrome */
+.top { position: fixed; z-index: 10; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; pointer-events: none;
+  padding: calc(18px + env(safe-area-inset-top, 0px)) max(22px, env(safe-area-inset-right, 0px)) 0 max(22px, env(safe-area-inset-left, 0px)); }
+.top > * { pointer-events: auto; }
+.brand { cursor: pointer; }
+.brand b { display: block; font: 400 20px/1 var(--f-display); letter-spacing: .5em; }
+.brand span { display: block; margin-top: 8px; font: 400 10px/1.4 var(--f-mono); color: var(--dim); letter-spacing: .06em; }
+.ledger { text-align: right; display: grid; gap: 8px; justify-items: end; }
+.ledger .h { font: 400 10px/1.3 var(--f-mono); letter-spacing: .12em; color: var(--dim); text-transform: uppercase; }
+.ledger .h b { color: var(--bone); font-weight: 500; }
+.chips { display: flex; gap: 6px; }
+.chip { width: 26px; height: 26px; border: 1px solid var(--line-2); border-radius: 50%; display: grid; place-items: center; font: 400 9px/1 var(--f-display); color: var(--dim); background: rgba(4, 5, 10, .5); cursor: pointer; padding: 0; transition: background .4s, color .4s, border-color .4s; }
+.chip.done { background: var(--a); border-color: var(--a); color: var(--void); }
+.chip:hover { border-color: var(--bone); color: var(--bone); }
+.chip.done:hover { color: var(--void); }
+.btn { border: 1px solid var(--line-2); background: rgba(4, 5, 10, .55); border-radius: 2px; padding: 10px 14px; cursor: pointer; font: 400 10px/1 var(--f-display); letter-spacing: .18em; text-transform: uppercase; transition: background .25s, color .25s, border-color .25s; white-space: nowrap; user-select: none; -webkit-user-select: none; }
+.btn:hover { background: var(--bone); color: var(--void); border-color: var(--bone); }
+.btn.solid { background: var(--bone); color: var(--void); border-color: var(--bone); }
+.btn.solid:hover { background: transparent; color: var(--bone); }
+.btn.glow { border-color: var(--star); color: var(--star); animation: glow 2.4s ease-in-out infinite; }
+.btn.glow:hover { background: var(--star); color: var(--void); }
+@keyframes glow { 50% { box-shadow: 0 0 24px rgba(241, 207, 152, .45); } }
+.btn[disabled] { opacity: .4; pointer-events: none; }
+
+.log { position: fixed; z-index: 10; left: max(22px, env(safe-area-inset-left, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: min(400px, calc(100% - 44px));
+  background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 16px 18px 16px; display: grid; gap: 10px; transition: opacity .5s; }
+.log .h { font: 400 10px/1.3 var(--f-mono); letter-spacing: .12em; color: var(--star); text-transform: uppercase; display: flex; justify-content: space-between; gap: 10px; }
+.log .h button { border: 0; background: none; color: var(--dim); cursor: pointer; font: inherit; letter-spacing: inherit; padding: 0; }
+.log .t { font: 300 18px/1.42 var(--f-log); margin: 0; text-wrap: pretty; }
+.log .c { display: flex; gap: 8px; flex-wrap: wrap; }
+.log.min .t, .log.min .c { display: none; }
+.log { clip-path: polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px); }
+.log::after { content: ""; position: absolute; width: 10px; height: 10px; pointer-events: none; opacity: .5; right: -1px; bottom: -1px; border-bottom: 1px solid var(--bone); border-right: 1px solid var(--bone); }
+.log .band { position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--star); pointer-events: none; }
+
+.dock { position: fixed; z-index: 10; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; pointer-events: none;
+  padding: 0 max(22px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(22px, env(safe-area-inset-left, 0px)); }
+.dock > * { pointer-events: auto; }
+.grp { display: flex; align-items: center; gap: 0; border: 1px solid var(--line-2); background: rgba(4, 5, 10, .6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.grp button { border: 0; border-right: 1px solid var(--line); background: none; cursor: pointer; padding: 10px 12px; font: 400 10px/1 var(--f-mono); letter-spacing: .08em; color: var(--dim); transition: background .2s, color .2s; }
+.grp button:last-child { border-right: 0; }
+.grp button:hover { color: var(--bone); }
+.grp button[aria-pressed="true"] { background: var(--bone); color: var(--void); }
+.grp .lab { padding: 0 10px; font: 400 9px/1 var(--f-mono); letter-spacing: .12em; color: var(--dim); text-transform: uppercase; border-right: 1px solid var(--line); align-self: stretch; display: grid; place-items: center; }
+.readout { font: 400 10px/1.5 var(--f-mono); color: var(--dim); text-align: right; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.readout b { color: var(--bone); font-weight: 400; }
+.dock-l { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* dossier */
+.dossier { position: fixed; z-index: 12; top: calc(84px + env(safe-area-inset-top, 0px)); right: max(22px, env(safe-area-inset-right, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 390px;
+  background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); overflow-y: auto; overscroll-behavior: contain;
+  transform: translateX(calc(100% + 40px)); transition: transform .7s var(--ease); padding: 20px 22px 24px; display: grid; gap: 16px; align-content: start; }
+.dossier.on { transform: none; }
+.dossier { clip-path: polygon(22px 0, 100% 0, 100% 100%, 0 100%, 0 22px); }
+.dossier::after { content: ""; position: absolute; width: 11px; height: 11px; pointer-events: none; opacity: .55; right: -1px; bottom: -1px; border-bottom: 1px solid var(--bone); border-right: 1px solid var(--bone); }
+.dossier .band { position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--a); pointer-events: none; }
+.scan { height: 6px; background: repeating-linear-gradient(135deg, var(--line-2) 0 2px, transparent 2px 7px); opacity: .85; margin: 6px 0 0; }
+.dossier .k { font: 400 10px/1.3 var(--f-mono); color: var(--a); letter-spacing: .12em; text-transform: uppercase; display: flex; justify-content: space-between; }
+.dossier h2 { margin: 0; font: 400 26px/1.1 var(--f-display); letter-spacing: .14em; }
+.dossier .sub { margin: -8px 0 0; font: 400 13px/1.4 var(--f-ui); color: var(--dim); }
+.dossier .sub b { color: var(--bone); font-weight: 500; }
+.data { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.data div { background: rgba(9, 11, 18, .9); padding: 8px 10px; }
+.data dt { font: 400 9px/1.3 var(--f-mono); color: var(--dim); letter-spacing: .12em; text-transform: uppercase; }
+.data dd { margin: 2px 0 0; font: 400 12px/1.3 var(--f-mono); font-variant-numeric: tabular-nums; }
+.dossier .tale { font: 300 17px/1.45 var(--f-log); margin: 0; }
+.dossier .fn { margin: 0; font-size: 13px; color: var(--bone); border-left: 1px solid var(--a); padding-left: 12px; }
+.dossier .fn b { display: block; font: 400 9px/1.3 var(--f-mono); letter-spacing: .14em; color: var(--dim); text-transform: uppercase; margin-bottom: 4px; }
+.act { border: 1px solid var(--line-2); padding: 14px; display: grid; gap: 12px; position: relative; }
+.act::before { content: attr(data-t); position: absolute; top: -7px; left: 10px; padding: 0 6px; background: rgb(12, 14, 21); font: 400 9px/1.2 var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--a); }
+.act .row { display: flex; gap: 8px; }
+.act input[type="text"] { flex: 1; min-width: 0; background: transparent; border: 0; border-bottom: 1px solid var(--line-2); padding: 8px 0; font: 400 14px/1.3 var(--f-ui); }
+.act input[type="text"]:focus { outline: none; border-color: var(--a); }
+.act .out { font: 300 16px/1.45 var(--f-log); margin: 0; min-height: 1.4em; }
+.cites { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cites li { font: 400 10px/1 var(--f-mono); border: 1px solid var(--a); color: var(--a); padding: 5px 7px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.steps li { display: grid; grid-template-columns: 28px 1fr; gap: 2px 8px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.steps li .n { font: 400 11px/1.3 var(--f-display); color: var(--dim); grid-row: span 2; }
+.steps li.on .n, .steps li.done .n { color: var(--a); }
+.steps li i { grid-column: 2; font: 300 15px/1.35 var(--f-log); color: var(--bone); min-height: 1em; }
+.meter { height: 6px; background: var(--line); position: relative; }
+.meter .band { position: absolute; top: 0; bottom: 0; background: rgba(235, 230, 218, .22); }
+.meter .needle { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--a); }
+.zrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; font: 400 11px/1.3 var(--f-mono); color: var(--dim); }
+.zrow b { font: 400 18px/1 var(--f-display); color: var(--bone); font-variant-numeric: tabular-nums; }
+canvas.frames { width: 100%; height: 120px; display: block; background: rgba(0, 0, 0, .35); border: 1px solid var(--line); }
+.rocks { display: flex; flex-wrap: wrap; gap: 6px; }
+.rocks button { border: 1px solid var(--line-2); background: none; padding: 6px 9px; font: 400 11px/1.2 var(--f-ui); cursor: pointer; color: var(--bone); }
+.rocks button:hover, .rocks button.on { border-color: var(--a); color: var(--a); }
+.rocks button.mine { background: var(--a); color: var(--void); border-color: var(--a); }
+.slides { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.slides li { display: grid; grid-template-columns: 30px 1fr; gap: 0 8px; padding: 8px 10px; border: 1px solid var(--line); font-size: 13px; transition: border-color .4s; }
+.slides li b { font: 400 11px/1.4 var(--f-display); color: var(--a); grid-row: span 2; }
+.slides li i { grid-column: 2; font: 300 14px/1.3 var(--f-log); color: var(--dim); }
+.slides.ordered li { border-color: var(--a); }
+.dossier .foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
+.done-mark { font: 400 10px/1.3 var(--f-mono); color: var(--a); letter-spacing: .12em; text-transform: uppercase; }
+
+/* finale */
+.title { position: fixed; inset: 0; z-index: 14; display: grid; place-items: center; align-content: center; gap: 18px; pointer-events: none; opacity: 0; transition: opacity 1.6s; text-align: center; }
+.title.on { opacity: 1; }
+.title h1 { margin: 0 -.6em 0 0; font: 400 clamp(46px, 11vw, 150px)/1 var(--f-display); letter-spacing: .6em; color: #fff7e8; text-shadow: 0 0 40px rgba(241, 207, 152, .6), 0 0 120px rgba(241, 207, 152, .3); }
+.title.on h1 { animation: open 3.2s var(--ease) both; }
+.title p { margin: 0; font: 300 clamp(18px, 2.4vw, 26px)/1.3 var(--f-log); color: var(--star); }
+@keyframes open { from { letter-spacing: .04em; filter: blur(10px); } to { letter-spacing: .6em; filter: none; } }
+.cat { position: fixed; z-index: 16; left: 50%; top: 50%; transform: translate(-50%, -46%); width: min(860px, calc(100% - 32px)); max-height: calc(100% - 140px); overflow: auto; opacity: 0; pointer-events: none;
+  background: rgba(7, 8, 13, .92); border: 1px solid var(--line-2); padding: 24px 26px; transition: opacity .6s, transform .6s var(--ease); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.cat.on { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
+.cat h3 { margin: 0 0 4px; font: 400 16px/1.2 var(--f-display); letter-spacing: .24em; }
+.cat > p { margin: 0 0 16px; font: 300 17px/1.4 var(--f-log); color: var(--dim); }
+.cat table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cat th { text-align: left; font: 400 9px/1.3 var(--f-mono); letter-spacing: .14em; color: var(--dim); text-transform: uppercase; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line-2); }
+.cat td { padding: 12px 10px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.cat td.m { font: 400 11px/1.4 var(--f-mono); color: var(--dim); white-space: nowrap; }
+.cat td.b { font: 400 11px/1.4 var(--f-display); letter-spacing: .12em; white-space: nowrap; }
+.cat td.b i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--a); margin-right: 8px; }
+.cat .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+.wrap-x { overflow-x: auto; }
+.nogl { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; font: 300 20px/1.4 var(--f-log); }
+
+/* opening frame */
+#hero { display: none; position: fixed; inset: 0; z-index: 20; place-items: center; cursor: pointer; transition: opacity .9s var(--ease); }
+body.pre-hero #hero { display: grid; }
+body.pre-hero .top, body.pre-hero .log, body.pre-hero .dock, body.pre-hero #labels { display: none; }
+#hero.off { opacity: 0; pointer-events: none; }
+#hero::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 16% 85% at 35% 50%, rgba(255,255,255,.1), transparent 72%), radial-gradient(ellipse 16% 85% at 65% 50%, rgba(255,255,255,.1), transparent 72%);
+  mix-blend-mode: screen; }
+.hero-crop { position: absolute; width: 20px; height: 20px; opacity: .5; pointer-events: none; }
+.hero-crop::before, .hero-crop::after { content: ""; position: absolute; background: var(--bone); }
+.hero-crop::before { left: 50%; top: 0; width: 1px; height: 100%; transform: translateX(-50%); }
+.hero-crop::after { top: 50%; left: 0; height: 1px; width: 100%; transform: translateY(-50%); }
+.hero-crop.tl { top: 24px; left: 24px; } .hero-crop.tr { top: 24px; right: 24px; } .hero-crop.bl { bottom: 24px; left: 24px; } .hero-crop.br { bottom: 24px; right: 24px; }
+.hero-top { position: absolute; top: 24px; left: 24px; right: 24px; display: flex; justify-content: space-between; font: 500 10px/1.4 var(--f-mono); letter-spacing: .2em; color: var(--dim); text-transform: uppercase; pointer-events: none; }
+.hero-top span { text-align: right; }
+.hero-top b { display: block; color: var(--bone); font-weight: 500; }
+.hero-mid { display: grid; justify-items: center; gap: 26px; text-align: center; pointer-events: none; }
+.hero-cap b { display: block; font: 600 15px/1.3 var(--f-display); letter-spacing: .1em; color: var(--bone); text-transform: lowercase; }
+.hero-cap small { display: block; font: 500 9px/1.4 var(--f-mono); letter-spacing: .3em; color: var(--dim); text-transform: uppercase; margin-top: 7px; }
+.hero-word { position: relative; }
+.hero-mid h1 { margin: 0; font: 400 clamp(54px, 12vw, 150px)/1 var(--f-display); letter-spacing: .14em; color: var(--bone); text-shadow: 0 0 60px rgba(241, 207, 152, .25); }
+.hero-dot { position: absolute; left: 50%; top: 52%; width: 9px; height: 9px; border-radius: 50%; background: var(--star); transform: translate(-50%, -50%); box-shadow: 0 0 18px 2px var(--star); }
+@media (max-width: 760px) { .hero-crop { display: none; } .hero-top { font-size: 9px; } .hero-mid { gap: 18px; } }
+
+@media (max-width: 760px) {
+  .brand b { font-size: 15px; }
+  .brand span { display: none; }
+  .ledger .h { font-size: 9px; }
+  .chip { width: 22px; height: 22px; }
+  .log { top: calc(64px + env(safe-area-inset-top, 0px)); bottom: auto; width: calc(100% - 32px); left: 16px; padding: 12px 14px; }
+  .log .t { font-size: 16px; }
+  .dossier { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: 58%; transform: translateY(105%); border-left: 0; border-right: 0; padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+  .dossier.on { transform: none; }
+  .dossier h2 { font-size: 20px; }
+  .readout { display: none; }
+  .dock { padding-left: 16px; padding-right: 16px; }
+  .grp button { padding: 9px 9px; }
+  body.focused .dock, body.focused .log { opacity: 0; pointer-events: none; }
+  .tgt .lbl small { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+</style>
+
+<canvas id="gl" aria-label="Interactive 3D map of the CYLOS system. Drag to turn, scroll or pinch to zoom, select a body to survey it."></canvas>
+<div id="labels"></div>
+<div class="nogl" id="nogl">This survey needs WebGL to draw the CYLOS system. Try a recent desktop browser.</div>
+
+<div id="hero" aria-hidden="true">
+  <span class="hero-crop tl"></span><span class="hero-crop tr"></span><span class="hero-crop bl"></span><span class="hero-crop br"></span>
+  <div class="hero-top"><span><b>CYLOS SURVEY</b>FIELD STUDY</span><span><b>00 / 06</b>APPROACH</span></div>
+  <div class="hero-mid">
+    <div class="hero-cap"><b>six worlds</b><small>circle one star</small></div>
+    <div class="hero-word"><h1>CYLOS</h1><span class="hero-dot"></span></div>
+    <div class="hero-cap"><b>one light</b><small>tap to approach</small></div>
+  </div>
+</div>
+<header class="top">
+  <div class="brand"><b>CYLOS</b><span>Survey of an uncharted system &middot; Epoch 2026.87</span></div>
+  <div class="ledger">
+    <span class="h">Bodies surveyed <b id="count">0</b> / 6</span>
+    <div class="chips" id="chips"></div>
+    <button class="btn glow" id="conj" type="button" hidden>Observe the conjunction</button>
+  </div>
+</header>
+
+<section class="log" id="log" aria-live="polite">
+  <div class="band"></div>
+  <div class="h"><span id="log-h">Log 00 &middot; Approach</span><button id="log-min" type="button" aria-label="Collapse log">&minus;</button></div>
+  <p class="t" id="log-t">Our charts end here. Beyond the last catalogued arm lies a star no survey has named, with six bodies circling it, each strange in its own way. The old makers called the system CYLOS.</p>
+  <div class="c" id="log-c"><button class="btn solid" id="approach" type="button">Approach CYLOS</button></div>
+</section>
+
+<aside class="dossier" id="dossier" aria-label="Body dossier"></aside>
+
+<footer class="dock">
+  <div class="dock-l">
+    <div class="grp" role="group" aria-label="View">
+      <span class="lab">View</span>
+      <button type="button" id="v-galaxy">Galaxy</button>
+      <button type="button" id="v-system">System</button>
+    </div>
+    <div class="grp" role="group" aria-label="Zoom">
+      <button type="button" id="z-out" aria-label="Zoom out">&minus;</button>
+      <button type="button" id="z-in" aria-label="Zoom in">+</button>
+    </div>
+    <div class="grp" role="group" aria-label="Time">
+      <span class="lab">Time</span>
+      <button type="button" data-ts="0">❚❚</button>
+      <button type="button" data-ts="1" aria-pressed="true">1×</button>
+      <button type="button" data-ts="12">12×</button>
+      <button type="button" data-ts="80">80×</button>
+    </div>
+  </div>
+  <div class="readout" id="readout">RA <b>--</b> &middot; DEC <b>--</b><br>RANGE <b>--</b> &middot; FOV <b>50°</b></div>
+</footer>
+
+<div class="title" id="title"><h1>CYLOS</h1><p>Six worlds. One light.</p></div>
+<div class="cat" id="cat" role="dialog" aria-label="Survey catalogue"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const fail = () => { $("#nogl").style.display = "grid"; };
+  if (!window.THREE) return fail();
+  const T = THREE, TAU = Math.PI * 2;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const canvas = $("#gl");
+  let renderer;
+  try { renderer = new T.WebGLRenderer({ canvas, antialias: true }); } catch (e) { return fail(); }
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x04050a, 1);
+  const scene = new T.Scene();
+  const camera = new T.PerspectiveCamera(50, 1, 0.1, 60000);
+
+  /* ================================================================ shaders */
+  const NOISE = `
+  vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+  float snoise(vec3 v){
+    const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+    vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+    vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+    i=mod289(i);
+    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+    vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+    vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+    vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+    vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+    vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+    return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+  }
+  float fbm(vec3 p){ float a=0.5, s=0.0; for(int i=0;i<5;i++){ s+=a*snoise(p); p*=2.03; a*=0.5; } return s; }
+  `;
+  const PLANET_V = `varying vec3 vP; varying vec3 vN; varying vec3 vW;
+    void main(){ vP=position; vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; vN=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*w; }`;
+  const PLANET_F = `uniform int uKind; uniform vec3 c1; uniform vec3 c2; uniform vec3 c3; uniform vec3 atm; uniform float uT; uniform float uPulse; uniform float uSeed;
+    varying vec3 vP; varying vec3 vN; varying vec3 vW;` + NOISE + `
+    void main(){
+      vec3 p=normalize(vP); vec3 N=normalize(vN); vec3 L=normalize(-vW); vec3 V=normalize(cameraPosition-vW);
+      float diff=max(dot(N,L),0.0); vec3 col; vec3 emit=vec3(0.0);
+      if(uKind==0){
+        float n=fbm(p*2.2+uSeed+vec3(uT*0.01,0.0,0.0));
+        float b=sin(p.y*15.0+n*3.6)*0.5+0.5; float b2=sin(p.y*44.0+n*7.0)*0.5+0.5;
+        col=mix(c1,c2,b); col=mix(col,c3,b2*0.3);
+        float lon=atan(p.z,p.x); float spot=smoothstep(0.26,0.0,length(vec2((lon-1.1)*0.9,(p.y+0.32)*2.2)));
+        col=mix(col,c3,spot*0.85); emit=c3*spot*0.05;
+      } else if(uKind==1){
+        float n=fbm(p*2.6+uSeed); float r=1.0-abs(snoise(p*3.2+uSeed)); float r2=1.0-abs(snoise(p*7.0+uSeed*2.0));
+        float cr=smoothstep(0.86,0.985,r)+smoothstep(0.9,0.99,r2)*0.5;
+        col=mix(c1,c2,n*0.5+0.5);
+        emit=c3*cr*(1.1+0.5*sin(uT*1.6+n*7.0))*(1.0+uPulse*1.5);
+      } else {
+        float h=fbm(p*1.7+uSeed); col=mix(c1,c2,smoothstep(-0.15,0.35,h));
+        col=mix(col,c3,smoothstep(0.7,0.88,abs(p.y)+h*0.12));
+        float cr=fbm(p*8.0+uSeed); col*=0.82+0.32*cr;
+      }
+      float micro=fbm(p*22.0+uSeed*4.0); float micro2=fbm(p*58.0+uSeed*6.0);
+      col*=0.85+0.22*micro+0.09*micro2;
+      float fres=pow(1.0-max(dot(N,V),0.0),2.6);
+      vec3 lit=col*(diff*1.2+0.075)+atm*fres*(0.32+diff*1.1)+emit+atm*uPulse*0.5*fres;
+      gl_FragColor=vec4(lit,1.0);
+    }`;
+  const planetMat = (kind, a, b, c, atm, seed) => new T.ShaderMaterial({
+    uniforms: { uKind: { value: kind }, c1: { value: new T.Color(a) }, c2: { value: new T.Color(b) }, c3: { value: new T.Color(c) }, atm: { value: new T.Color(atm) }, uT: { value: 0 }, uPulse: { value: 0 }, uSeed: { value: seed } },
+    vertexShader: PLANET_V, fragmentShader: PLANET_F,
+  });
+
+  /* glow sprites */
+  const glowTex = (() => { const c = document.createElement("canvas"); c.width = c.height = 128; const g = c.getContext("2d"); const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(.2, "rgba(255,255,255,.45)"); r.addColorStop(.5, "rgba(255,255,255,.1)"); r.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = r; g.fillRect(0, 0, 128, 128); return new T.CanvasTexture(c); })();
+  const dotTex = (() => { const c = document.createElement("canvas"); c.width = c.height = 32; const g = c.getContext("2d"); const r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(.35, "rgba(255,255,255,.7)"); r.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = r; g.fillRect(0, 0, 32, 32); return new T.CanvasTexture(c); })();
+  const bumpTex = (() => { const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d");
+    const id = g.createImageData(256, 256);
+    for (let i = 0; i < id.data.length; i += 4) { const v = 128 + (Math.random() - .5) * 170; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+    g.putImageData(id, 0, 0);
+    const out = document.createElement("canvas"); out.width = out.height = 256; const o = out.getContext("2d");
+    o.filter = "blur(1.1px)"; o.drawImage(c, 0, 0);
+    const t = new T.CanvasTexture(out); t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(5, 5); return t; })();
+  const glow = (color, scale, opacity = .5) => { const s = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color, transparent: true, opacity, blending: T.AdditiveBlending, depthWrite: false })); s.scale.setScalar(scale); return s; };
+
+  /* seeded random + cheap 3D value noise for rock shapes */
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const n3 = (x, y, z, s) => Math.sin(x * 1.7 + s) * Math.sin(y * 2.3 + s * 1.3) * Math.sin(z * 1.9 + s * .7) + .5 * Math.sin(x * 4.1 + y * 3.3 + s) * Math.sin(z * 3.7 - s);
+  const rockGeo = (detail, amp, s) => { const g = new T.IcosahedronGeometry(1, detail); const p = g.attributes.position; const v = new T.Vector3();
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).normalize(); const k = 1 + amp * n3(v.x * 1.6, v.y * 1.6, v.z * 1.6, s) + amp * .4 * n3(v.x * 4, v.y * 4, v.z * 4, s * 2); v.multiplyScalar(k); p.setXYZ(i, v.x, v.y, v.z); }
+    g.computeVertexNormals(); return g; };
+
+  /* ================================================================ lights, sky, galaxy */
+  scene.add(new T.AmbientLight(0x1c2436, .55));
+  const sun = new T.PointLight(0xfff0d8, 1.7, 0); scene.add(sun);
+
+  // far stars
+  { const N = 6000, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), c = new T.Color();
+    for (let i = 0; i < N; i++) { const u = rnd() * 2 - 1, th = rnd() * TAU, r = 30000, s = Math.sqrt(1 - u * u);
+      pos.set([r * s * Math.cos(th), r * u, r * s * Math.sin(th)], i * 3); c.setHSL(.55 + rnd() * .12 - (rnd() < .2 ? .45 : 0), .35, .6 + rnd() * .35); col.set([c.r, c.g, c.b], i * 3); }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.BufferAttribute(pos, 3)); g.setAttribute("color", new T.BufferAttribute(col, 3));
+    scene.add(new T.Points(g, new T.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: .85, depthWrite: false }))); }
+
+  // the galaxy: three arms, the CYLOS system sits on one of them
+  const G = new T.Vector3(-2600, -260, 1500);
+  const galaxy = new T.Group(); galaxy.position.copy(G); galaxy.rotation.set(.18, 0, .08); scene.add(galaxy);
+  { const N = 42000, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), c = new T.Color(), R = 3600;
+    const sysLocal = new T.Vector3().sub(G).applyEuler(new T.Euler(-.18, 0, -.08));
+    for (let i = 0; i < N; i++) {
+      const bulge = rnd() < .14; let x, y, z;
+      if (bulge) { const r = Math.pow(rnd(), 2) * 700, th = rnd() * TAU, u = rnd() * 2 - 1; x = r * Math.cos(th) * Math.sqrt(1 - u * u); z = r * Math.sin(th) * Math.sqrt(1 - u * u); y = r * u * .45; c.setHSL(.09 + rnd() * .03, .55, .65 + rnd() * .2); }
+      else { const arm = Math.floor(rnd() * 3), r = 260 + Math.pow(rnd(), .9) * R, spin = Math.log(r / 200) * 1.55, spread = (rnd() + rnd() + rnd() - 1.5) * (.55 - r / R * .25);
+        const th = arm * TAU / 3 + spin + spread; x = r * Math.cos(th) + (rnd() - .5) * 180; z = r * Math.sin(th) + (rnd() - .5) * 180; y = (rnd() - .5) * 70 * (1 - r / R);
+        const warm = rnd() < .25; c.setHSL(warm ? .08 : .6 + rnd() * .1, warm ? .5 : .45, .55 + rnd() * .25); }
+      const dx = x - sysLocal.x, dy = y - sysLocal.y, dz = z - sysLocal.z; if (dx * dx + dy * dy + dz * dz < 260 * 260) { x += 600; }
+      pos.set([x, y, z], i * 3); col.set([c.r, c.g, c.b], i * 3);
+    }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.BufferAttribute(pos, 3)); g.setAttribute("color", new T.BufferAttribute(col, 3));
+    galaxy.add(new T.Points(g, new T.PointsMaterial({ size: 20, map: dotTex, vertexColors: true, transparent: true, opacity: .75, depthWrite: false, blending: T.AdditiveBlending })));
+    const core = glow(0xffd9a8, 2600, .35); galaxy.add(core);
+  }
+
+  // survey grid (RA / Dec) on the celestial sphere
+  { const pts = [], R = 20000;
+    for (let ra = 0; ra < 360; ra += 30) for (let d = -80; d < 80; d += 4) { const a = ra * Math.PI / 180, d1 = d * Math.PI / 180, d2 = (d + 4) * Math.PI / 180; pts.push(R * Math.cos(d1) * Math.cos(a), R * Math.sin(d1), R * Math.cos(d1) * Math.sin(a), R * Math.cos(d2) * Math.cos(a), R * Math.sin(d2), R * Math.cos(d2) * Math.sin(a)); }
+    for (let d = -75; d <= 75; d += 15) for (let ra = 0; ra < 360; ra += 4) { const a1 = ra * Math.PI / 180, a2 = (ra + 4) * Math.PI / 180, dd = d * Math.PI / 180; pts.push(R * Math.cos(dd) * Math.cos(a1), R * Math.sin(dd), R * Math.cos(dd) * Math.sin(a1), R * Math.cos(dd) * Math.cos(a2), R * Math.sin(dd), R * Math.cos(dd) * Math.sin(a2)); }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pts, 3));
+    scene.add(new T.LineSegments(g, new T.LineBasicMaterial({ color: 0xebe6da, transparent: true, opacity: .05, depthWrite: false }))); }
+
+  // ecliptic chart: range rings and bearings (the survey plate, laid flat in the system)
+  const chartMat = new T.LineBasicMaterial({ color: 0xebe6da, transparent: true, opacity: .07, depthWrite: false });
+  { const pts = [];
+    for (let r = 10; r <= 70; r += 10) for (let i = 0; i < 180; i++) { const a = i / 180 * TAU, b = (i + 1) / 180 * TAU; pts.push(r * Math.cos(a), 0, r * Math.sin(a), r * Math.cos(b), 0, r * Math.sin(b)); }
+    for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; pts.push(8 * Math.cos(a), 0, 8 * Math.sin(a), 74 * Math.cos(a), 0, 74 * Math.sin(a)); }
+    for (let i = 0; i < 72; i++) { const a = i / 72 * TAU, r = 70; pts.push(r * Math.cos(a), 0, r * Math.sin(a), (r + 1.6) * Math.cos(a), 0, (r + 1.6) * Math.sin(a)); }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pts, 3)); scene.add(new T.LineSegments(g, chartMat)); }
+
+  /* ================================================================ the star */
+  const starMat = new T.ShaderMaterial({ uniforms: { uT: { value: 0 }, uFlare: { value: 0 } }, vertexShader: PLANET_V,
+    fragmentShader: `uniform float uT; uniform float uFlare; varying vec3 vP; varying vec3 vN; varying vec3 vW;` + NOISE + `
+      void main(){ vec3 p=normalize(vP); float n=fbm(p*3.0+vec3(0.0,uT*0.05,uT*0.03)); float g=fbm(p*9.0-uT*0.04);
+        vec3 V=normalize(cameraPosition-vW); float limb=pow(max(dot(normalize(vN),V),0.0),0.5);
+        vec3 col=mix(vec3(1.0,0.55,0.22),vec3(1.0,0.93,0.78),n*0.5+0.5+g*0.2);
+        gl_FragColor=vec4(col*(0.6+0.6*limb)*(1.0+uFlare),1.0); }` });
+  const star = new T.Mesh(new T.SphereGeometry(4.2, 64, 64), starMat); scene.add(star);
+  const starGlow = glow(0xffd29a, 46, .85), starHalo = glow(0xffb36b, 160, .22); scene.add(starGlow, starHalo);
+  const starHit = new T.Mesh(new T.SphereGeometry(6, 16, 16), new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); starHit.userData.key = "star"; scene.add(starHit);
+
+  /* ================================================================ bodies */
+  const BODIES = [
+    { key: "core", n: "I", t: "T-01", name: "MNEMOS", tool: "Core", code: "CYL-0001", cls: "Banded archive giant", color: "#9fc6da", R: 22, P: 72, inc: .03, ph: .4, size: 3, view: 17,
+      tale: "Mnemos is the oldest body in the system: a banded giant whose layers are memory. Every method, debrief and name the makers ever learned is laid down in its bands. Its ring answers anyone who asks, and points back to the band the answer came from.",
+      desc: "AI knowledge capture, search and chat. SOPs, debriefs and talent history, answerable in plain language and cited back to the source." },
+    { key: "portal", n: "II", t: "T-02", name: "TRINE", tool: "Production Portal", code: "CYL-0002", cls: "Forge world, three moons", color: "#f0a65e", R: 12, P: 44, inc: -.05, ph: 2.1, size: 1.9, view: 11,
+      tale: "Trine is a forge world, its crust split by molten seams, with three moons that never break formation. The first moon generates. The second weighs every piece against the house law. The third reviews and releases it. Nothing leaves Trine's orbit without passing all three.",
+      desc: "Brand-governed production. Take a brief through Generate → QualityGate → Review, with a resizing room for every format." },
+    { key: "zoetrope", n: "III", t: "T-03", name: "KINETOS", tool: "Zoetrope", code: "CYL-0003", cls: "Ringed kinetic world", color: "#9fc48e", R: 31, P: 104, inc: .06, ph: 4.0, size: 2.3, view: 15,
+      tale: "Kinetos wears a crown of twelve slats. Turn it slowly and they are only slats. Turn it fast enough and the eye stops seeing slats and sees motion. Kinetos makes a film the same way: a prompt, then scenes, then frames, until it moves.",
+      desc: "Agent-orchestrated video production. Go from prompt to finished cut through director-driven pipelines." },
+    { key: "apps", n: "IV", t: "T-04", name: "THE COMMONS", tool: "Apps", code: "CYL-0004", cls: "Shared asteroid swarm", color: "#d0a48a", R: 40, P: 140, inc: -.04, ph: 5.3, size: 4.4, view: 19,
+      tale: "The Commons is not a planet but a swarm, built rock by rock. Every rock is a tool one maker built for their own work and then left in orbit for everyone. The swarm is never finished. It grows each time someone passes through.",
+      desc: "Tools people here built to solve a problem in their own work, then shared because they turned out to be useful to everyone else." },
+    { key: "deck", n: "V", t: "T-05", name: "FOLIO", tool: "Deck Designer", code: "CYL-0005", cls: "Faceted crystal world", color: "#bba6e0", R: 50, P: 186, inc: .08, ph: 1.0, size: 2.1, view: 13,
+      tale: "Folio is a crystal world of flat facets, and five plates drift around it out of order. Give it a brief and the plates fall into sequence: an opening, a problem, an idea, a proof, an ask. Then the crystal writes the words to fit.",
+      desc: "Write a brief; Claude picks slides from a template, orders them and writes the copy." },
+    { key: "type", n: "VI", t: "T-06", name: "GLYPH", tool: "Type Tool", code: "CYL-0006", cls: "Knotted comet", color: "#f3e3b8", R: 60, P: 250, inc: .32, ph: 3.0, size: 1.5, view: 10, ecc: .52,
+      tale: "Glyph is a knotted comet on a long and wild orbit. Whatever word you give it, it carries in its tail, letters streaming off and turning as they go. Nothing Glyph writes stays still.",
+      desc: "Animated text and motion graphics, composed in-browser and sent to AI video models." },
+  ];
+  const BY = Object.fromEntries(BODIES.map((b) => [b.key, b]));
+
+  // orbit geometry
+  const orbitPoint = (b, th, out) => {
+    let r = b.R; if (b.ecc) r = b.R * (1 - b.ecc * b.ecc) / (1 + b.ecc * Math.cos(th));
+    const x = r * Math.cos(th), z = r * Math.sin(th);
+    return out.set(x, z * Math.sin(b.inc), z * Math.cos(b.inc));
+  };
+  for (const b of BODIES) {
+    const pts = []; const v = new T.Vector3();
+    for (let i = 0; i <= 360; i++) { orbitPoint(b, i / 360 * TAU, v); pts.push(v.x, v.y, v.z); }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pts, 3));
+    b.orbitMat = new T.LineBasicMaterial({ color: new T.Color(b.color), transparent: true, opacity: .18, depthWrite: false });
+    b.orbit = new T.Line(g, b.orbitMat); scene.add(b.orbit);
+    b.group = new T.Group(); scene.add(b.group);
+    b.hit = new T.Mesh(new T.SphereGeometry(b.size * 1.5, 16, 16), new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); b.hit.userData.key = b.key; b.group.add(b.hit);
+    b.th = b.ph; b.done = false; b.pulse = 0;
+    if (b.ecc) { const a = b.R, bb = a * Math.sqrt(1 - b.ecc * b.ecc); b.h = TAU * a * bb / b.P; }
+  }
+
+  /* I · MNEMOS — banded giant with a data ring */
+  { const b = BY.core;
+    b.mat = planetMat(0, "#253d4d", "#9fbfcf", "#e9f1f3", "#8fc6e6", 3.1);
+    b.mesh = new T.Mesh(new T.SphereGeometry(b.size, 96, 96), b.mat); b.mesh.rotation.z = .26; b.group.add(b.mesh);
+    b.ringMat = new T.ShaderMaterial({ uniforms: { uIn: { value: 4.2 }, uOut: { value: 7.6 }, uWave: { value: -1 }, uPulse: { value: 0 }, uCol: { value: new T.Color("#c9dde6") } }, transparent: true, side: T.DoubleSide, depthWrite: false,
+      vertexShader: `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `uniform float uIn; uniform float uOut; uniform float uWave; uniform float uPulse; uniform vec3 uCol; varying vec3 vP;` + NOISE + `
+        void main(){ float r=length(vP.xy); float t=(r-uIn)/(uOut-uIn); float n=snoise(vec3(r*2.6,0.3,0.0))*0.5+0.5; float n2=snoise(vec3(r*11.0,1.7,0.0))*0.5+0.5;
+          float edge=smoothstep(0.0,0.06,t)*smoothstep(1.0,0.88,t); float gap=smoothstep(0.30,0.33,t)*smoothstep(0.40,0.37,t);
+          float a=edge*(0.12+0.38*n*n2)*(1.0-gap*0.85); float w=uPulse*exp(-pow((t-uWave)*9.0,2.0));
+          gl_FragColor=vec4(uCol*(0.8+w*2.5),a+w*0.55); }` });
+    b.ring = new T.Mesh(new T.RingGeometry(4.2, 7.6, 192, 1), b.ringMat); b.ring.rotation.x = -Math.PI / 2 + .38; b.ring.rotation.y = .12; b.group.add(b.ring);
+    b.group.add(glow(0x8fc6e6, 10, .22));
+    b.update = (dt, t) => { b.mesh.rotation.y += dt * .05; b.mat.uniforms.uT.value = t; b.pulse = Math.max(0, b.pulse - dt * .35); b.ringMat.uniforms.uPulse.value = b.pulse; if (b.pulse > 0) b.ringMat.uniforms.uWave.value = (1 - b.pulse) * 1.3 - .1; b.mat.uniforms.uPulse.value = b.pulse * .6; };
+  }
+
+  /* II · TRINE — molten forge world with three moons in formation */
+  { const b = BY.portal;
+    b.mat = planetMat(1, "#120b08", "#3a2418", "#ff9a3c", "#ff7a2c", 7.7);
+    b.mesh = new T.Mesh(new T.SphereGeometry(b.size, 96, 96), b.mat); b.group.add(b.mesh);
+    b.group.add(glow(0xff8a3a, 7.5, .3));
+    b.moonRig = new T.Group(); b.moonRig.rotation.x = .3; b.group.add(b.moonRig);
+    b.moons = [0, 1, 2].map((i) => { const m = new T.Mesh(rockGeo(3, .08, 11 + i * 3), new T.MeshStandardMaterial({ color: 0x8c8780, roughness: .95, metalness: 0, emissive: new T.Color("#ff9a3c"), emissiveIntensity: 0, flatShading: false, bumpMap: bumpTex, bumpScale: .1 }));
+      m.scale.setScalar(.38 + i * .04); const a = i / 3 * TAU; m.position.set(Math.cos(a) * 3.5, 0, Math.sin(a) * 3.5); b.moonRig.add(m); const g = glow(0xff9a3c, 2.2, 0); m.add(g); m.userData.glow = g; return m; });
+    b.lit = [0, 0, 0];
+    b.update = (dt, t) => { b.mesh.rotation.y += dt * .08; b.mat.uniforms.uT.value = t; b.moonRig.rotation.y += dt * .35; b.pulse = Math.max(0, b.pulse - dt * .5); b.mat.uniforms.uPulse.value = b.pulse;
+      b.moons.forEach((m, i) => { const k = b.lit[i]; m.material.emissiveIntensity += (k * 1.6 - m.material.emissiveIntensity) * Math.min(1, dt * 4); m.userData.glow.material.opacity = m.material.emissiveIntensity * .35; m.rotation.y += dt * .3; }); };
+  }
+
+  /* III · KINETOS — terrestrial world in a crown of twelve slats */
+  { const b = BY.zoetrope;
+    b.mat = planetMat(2, "#24331f", "#93ad86", "#eef3ea", "#b6dca4", 12.4);
+    b.mesh = new T.Mesh(new T.SphereGeometry(b.size, 96, 96), b.mat); b.group.add(b.mesh);
+    b.group.add(glow(0xb6dca4, 8, .2));
+    b.crown = new T.Group(); b.crown.rotation.x = .28; b.crown.rotation.z = -.12; b.group.add(b.crown);
+    const slatMat = new T.MeshStandardMaterial({ color: 0xd3dcc9, metalness: .55, roughness: .3, emissive: new T.Color("#bfe7a9"), emissiveIntensity: 0 });
+    b.slatMat = slatMat;
+    for (let i = 0; i < 12; i++) { const a = i / 12 * TAU, s = new T.Mesh(new T.BoxGeometry(.1, 1.5, .95), slatMat); s.position.set(Math.cos(a) * 4.1, 0, Math.sin(a) * 4.1); s.rotation.y = -a; b.crown.add(s); }
+    const hoop = new T.Mesh(new T.TorusGeometry(4.1, .035, 6, 160), new T.MeshStandardMaterial({ color: 0xd3dcc9, metalness: .6, roughness: .3 })); hoop.rotation.x = Math.PI / 2; hoop.position.y = -.78; b.crown.add(hoop);
+    const hoop2 = hoop.clone(); hoop2.position.y = .78; b.crown.add(hoop2);
+    b.spin = { ang: 0, vel: 22, hold: false, band: 0 };
+    b.update = (dt, t) => { b.mesh.rotation.y += dt * .07; b.mat.uniforms.uT.value = t;
+      const s = b.spin; if (s.hold) s.vel = Math.min(s.vel + 240 * dt, 1100); else s.vel = Math.max(22, s.vel - (80 + s.vel * .5) * dt);
+      s.ang += s.vel * dt; b.crown.rotation.y = s.ang * Math.PI / 180;
+      const fps = s.vel / 360 * 12; s.fps = fps; slatMat.emissiveIntensity = fps >= 10 && fps <= 14 ? .55 + .35 * Math.sin(t * 40) : Math.max(0, (fps - 4) / 30); };
+  }
+
+  /* IV · THE COMMONS — a swarm of shared rocks around an empty centre */
+  { const b = BY.apps;
+    b.swarm = new T.Group(); b.group.add(b.swarm);
+    const NAMED = [["Shot-list builder", "Left by a producer"], ["Colour checker", "Left by a colourist"], ["Batch renamer", "Left by an editor"], ["Copy tidier", "Left by a writer"], ["Resizer", "Left by a designer"], ["Caption timer", "Left by an assistant"]];
+    b.rocks = [];
+    const addRock = (size, r, y, name, sub, tint, speed) => {
+      const m = new T.Mesh(rockGeo(2, .32, rnd() * 50), new T.MeshStandardMaterial({ color: tint, roughness: .92, metalness: .05, flatShading: true, emissive: new T.Color(b.color), emissiveIntensity: 0, bumpMap: bumpTex, bumpScale: .08 }));
+      m.scale.set(size * (.8 + rnd() * .5), size * (.7 + rnd() * .4), size * (.8 + rnd() * .5)); m.userData = { a: rnd() * TAU, r, y, sp: speed || (.25 + rnd() * .35) / Math.sqrt(r), rot: new T.Vector3(rnd(), rnd(), rnd()).multiplyScalar(.6), name, sub };
+      b.swarm.add(m); b.rocks.push(m); return m;
+    };
+    for (let i = 0; i < 70; i++) { const c = new T.Color().setHSL(.05 + rnd() * .04, .22 + rnd() * .15, .32 + rnd() * .25); addRock(.1 + Math.pow(rnd(), 2) * .35, 1.6 + rnd() * 3.4, (rnd() - .5) * 1.1, null, null, c); }
+    b.named = NAMED.map(([n, s], i) => addRock(.55, 1.8 + i * .5, (i % 2 ? .4 : -.4), n, s, new T.Color().setHSL(.06, .3, .55)));
+    b.addRock = addRock;
+    b.group.add(glow(0xd0a48a, 9, .1));
+    b.update = (dt) => { b.swarm.rotation.y += dt * .02;
+      for (const m of b.rocks) { const u = m.userData; u.a += u.sp * dt; m.position.set(Math.cos(u.a) * u.r, u.y + Math.sin(u.a * 2) * .15, Math.sin(u.a) * u.r); m.rotation.x += u.rot.x * dt; m.rotation.y += u.rot.y * dt;
+        m.material.emissiveIntensity += ((u.hi ? .55 : u.mine ? .35 : 0) - m.material.emissiveIntensity) * Math.min(1, dt * 5); } };
+  }
+
+  /* V · FOLIO — faceted crystal with five drifting plates */
+  { const b = BY.deck;
+    const g = new T.IcosahedronGeometry(b.size, 1); const p = g.attributes.position; const v = new T.Vector3(); const seen = new Map();
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const key = v.toArray().map((x) => x.toFixed(3)).join(); if (!seen.has(key)) seen.set(key, .88 + rnd() * .26); v.multiplyScalar(seen.get(key)); p.setXYZ(i, v.x, v.y, v.z); }
+    g.computeVertexNormals();
+    b.mesh = new T.Mesh(g, new T.MeshStandardMaterial({ color: 0xbca8e2, metalness: .35, roughness: .22, flatShading: true, emissive: new T.Color("#2c1f4a"), emissiveIntensity: .7, bumpMap: bumpTex, bumpScale: .025 })); b.group.add(b.mesh);
+    const inner = new T.Mesh(new T.IcosahedronGeometry(b.size * .55, 0), new T.MeshBasicMaterial({ color: 0xd9c9ff })); b.group.add(inner);
+    b.group.add(glow(0xbba6e0, 8, .25));
+    const SL = [["I", "Opening"], ["II", "The problem"], ["III", "The idea"], ["IV", "Proof"], ["V", "The ask"]];
+    b.plates = SL.map(([n, t], i) => {
+      const c = document.createElement("canvas"); c.width = 256; c.height = 160; const x = c.getContext("2d");
+      x.fillStyle = "#efe9f7"; x.fillRect(0, 0, 256, 160); x.strokeStyle = "#8f7cc0"; x.lineWidth = 3; x.strokeRect(6, 6, 244, 148);
+      x.fillStyle = "#4b3a7a"; x.font = "44px Michroma, Arial"; x.fillText(n, 20, 66); x.font = "20px 'Inter Tight', Arial"; x.fillStyle = "#2a2140"; x.fillText(t.toUpperCase(), 22, 124);
+      const tex = new T.CanvasTexture(c);
+      const m = new T.Mesh(new T.BoxGeometry(1.5, .94, .04), [0, 0, 0, 0].map(() => new T.MeshStandardMaterial({ color: 0xd8cfe9, roughness: .5 })).concat([new T.MeshStandardMaterial({ map: tex, roughness: .55, emissive: new T.Color("#ffffff"), emissiveMap: tex, emissiveIntensity: .25 }), new T.MeshStandardMaterial({ color: 0xd8cfe9, roughness: .5 })]));
+      m.userData = { a: rnd() * TAU, r: 3.4 + rnd() * .8, inc: (rnd() - .5) * 1.4, sp: .25 + rnd() * .3, i }; b.group.add(m); return m;
+    });
+    b.ordered = 0; b.texts = SL;
+    const tmp = new T.Vector3(), q = new T.Quaternion(), wp = new T.Vector3();
+    b.update = (dt) => { b.mesh.rotation.y += dt * .12; b.mesh.rotation.x += dt * .03; inner.rotation.y -= dt * .3;
+      b.plates.forEach((m) => { const u = m.userData; u.a += u.sp * dt * (1 - b.ordered);
+        const free = tmp.set(Math.cos(u.a) * u.r, Math.sin(u.a) * u.r * Math.sin(u.inc), Math.sin(u.a) * u.r * Math.cos(u.inc));
+        const row = new T.Vector3((u.i - 2) * 1.7, 3.2 - Math.abs(u.i - 2) * .25, 0);
+        if (b.ordered > .001) { b.group.getWorldPosition(wp); const camLocal = camera.position.clone().sub(wp).normalize(); const right = new T.Vector3(0, 1, 0).cross(camLocal).normalize(); row.copy(right.multiplyScalar((u.i - 2) * 1.5)).add(new T.Vector3(0, 3.1 - Math.abs(u.i - 2) * .22, 0)); }
+        m.position.copy(free).lerp(row, b.ordered);
+        if (b.ordered > .5) { m.lookAt(camera.position); } else { m.rotation.x += dt * .4; m.rotation.y += dt * .5; }
+      }); };
+  }
+
+  /* VI · GLYPH — knotted comet with a tail of letters */
+  { const b = BY.type;
+    const g = new T.TorusKnotGeometry(1.0, .34, 180, 20, 2, 3); const p = g.attributes.position; const v = new T.Vector3();
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const k = 1 + .09 * n3(v.x * 2.5, v.y * 2.5, v.z * 2.5, 4.4); v.multiplyScalar(k); p.setXYZ(i, v.x, v.y, v.z); }
+    g.computeVertexNormals();
+    b.mesh = new T.Mesh(g, new T.MeshStandardMaterial({ color: 0xd8c9a4, roughness: .6, metalness: .15, emissive: new T.Color("#5a4a2a"), emissiveIntensity: .12, bumpMap: bumpTex, bumpScale: .06 })); b.group.add(b.mesh);
+    b.group.add(glow(0xfff1cf, 6, .45));
+    // dust tail
+    const N = 500; const pos = new Float32Array(N * 3); b.dust = Array.from({ length: N }, () => ({ life: -rnd() * 4, v: new T.Vector3(), p: new T.Vector3() }));
+    const dg = new T.BufferGeometry(); dg.setAttribute("position", new T.BufferAttribute(pos, 3));
+    b.dustPts = new T.Points(dg, new T.PointsMaterial({ size: .22, map: dotTex, color: 0xf6e7c4, transparent: true, opacity: .55, depthWrite: false, blending: T.AdditiveBlending })); b.group.add(b.dustPts);
+    // letters
+    const texCache = {}; const letterTex = (ch) => { if (texCache[ch]) return texCache[ch]; const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"); x.fillStyle = "#fff4dc"; x.font = "84px Michroma, Arial"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(ch, 64, 70); return (texCache[ch] = new T.CanvasTexture(c)); };
+    b.letters = Array.from({ length: 46 }, () => { const s = new T.Sprite(new T.SpriteMaterial({ map: letterTex("C"), transparent: true, opacity: 0, depthWrite: false, color: 0xfff1cf })); s.userData = { life: -1, v: new T.Vector3() }; b.group.add(s); return s; });
+    b.word = "CYLOS"; b.wi = 0; b.emit = 0; b.letterTex = letterTex; b.rate = .22;
+    const anti = new T.Vector3();
+    b.update = (dt, t) => { b.mesh.rotation.x += dt * .25; b.mesh.rotation.y += dt * .4;
+      b.group.getWorldPosition(anti); anti.normalize();
+      const arr = b.dustPts.geometry.attributes.position.array;
+      b.dust.forEach((d, i) => { if (d.life < 0 && !d.born) { d.life += dt * 2; if (d.life < 0) { arr[i * 3] = 1e5; return; } d.born = true; d.life = 0; } d.life -= dt; if (d.life <= 0) { d.life = 2 + rnd() * 2.5; d.p = new T.Vector3((rnd() - .5) * .8, (rnd() - .5) * .8, (rnd() - .5) * .8); d.v.copy(anti).multiplyScalar(1.6 + rnd() * 2.4).add(new T.Vector3((rnd() - .5) * .5, (rnd() - .5) * .5, (rnd() - .5) * .5)); }
+        d.p.addScaledVector(d.v, dt); arr[i * 3] = d.p.x; arr[i * 3 + 1] = d.p.y; arr[i * 3 + 2] = d.p.z; });
+      b.dustPts.geometry.attributes.position.needsUpdate = true;
+      b.emit -= dt; if (b.emit <= 0 && b.word) { b.emit = b.rate; const s = b.letters.find((l) => l.userData.life < 0); if (s) { const ch = b.word[b.wi++ % b.word.length]; if (ch.trim()) { s.material.map = letterTex(ch); s.material.needsUpdate = true; s.userData.life = 0; s.position.set(0, 0, 0); s.userData.v.copy(anti).multiplyScalar(2.2 + rnd() * .8).add(new T.Vector3((rnd() - .5) * .6, (rnd() - .5) * .6, (rnd() - .5) * .6)); } } }
+      b.letters.forEach((s) => { const u = s.userData; if (u.life < 0) return; u.life += dt; s.position.addScaledVector(u.v, dt); const k = u.life / 5; s.material.opacity = k < .1 ? k * 10 : Math.max(0, 1 - k); s.scale.setScalar(.7 + k * 1.6); s.material.rotation = Math.sin(u.life * 2 + s.id) * .6; if (k >= 1) u.life = -1; }); };
+  }
+
+  /* ================================================================ camera: smooth spherical orbit with log zoom */
+  const cam = { target: new T.Vector3().copy(G).multiplyScalar(.45), tGoal: new T.Vector3().copy(G).multiplyScalar(.45), dist: 7600, dGoal: 7600, theta: .9, thGoal: .9, phi: .62, phGoal: .62, rate: 2.4, off: 0, offGoal: 0, offY: 0, offYGoal: 0 };
+  const HERO_DIST = 2200; // the "tiny planets" distance the intro frame is always viewed from
+  let focus = null, W = 1, H = 1;
+  const isPhone = () => innerWidth < 760;
+  const resize = () => { W = innerWidth; H = innerHeight; renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix(); };
+  addEventListener("resize", resize); resize();
+  const minDist = () => (focus ? focus.size * 2.6 : 18), maxDist = 9500;
+
+  /* ================================================================ HUD: labels */
+  const labels = $("#labels");
+  const mkLabel = (b, sub) => { const e = document.createElement("button"); e.type = "button"; e.className = "tgt" + (sub ? " sub" : ""); e.style.setProperty("--a", b.color || "#ebe6da");
+    e.innerHTML = sub ? `<span class="lbl"><b>${sub.name}</b></span>` : `<span class="box"><i></i><i></i><i></i><i></i></span><span class="lbl"><b>${b.t} · ${b.name}</b><small><em>${b.tool}</em></small></span>`;
+    labels.append(e); return e; };
+  BODIES.forEach((b) => { b.el = mkLabel(b); b.el.onclick = () => focusOn(b.key); b.el.setAttribute("aria-label", `${b.name}, ${b.tool}`); });
+  const starBody = { key: "star", t: "★", name: "CYLOS", tool: "The star", code: "CYL-0000", color: "#f1cf98", size: 4.2, group: star, view: 26 };
+  starBody.el = mkLabel(starBody); starBody.el.onclick = () => focusOn("star");
+  const marker = document.createElement("button"); marker.type = "button"; marker.className = "marker"; marker.innerHTML = `<span class="ring"></span><span class="lbl"><b>CYLOS</b><small>Uncharted system · 6 bodies</small></span>`; labels.append(marker);
+  marker.onclick = () => approach();
+  const subLabels = BY.apps.named.map((m) => { const e = mkLabel({ color: BY.apps.color }, { name: m.userData.name }); e.onclick = () => pickRock(m); return { m, e }; });
+
+  const v3 = new T.Vector3(), v4 = new T.Vector3();
+  const place = (el, world, r, show) => {
+    v3.copy(world).project(camera); const behind = v3.z > 1;
+    if (!show || behind) { el.style.opacity = 0; el.style.pointerEvents = "none"; return; }
+    const x = (v3.x * .5 + .5) * W, y = (-v3.y * .5 + .5) * H;
+    const d = camera.position.distanceTo(world), px = r / d * (H / 2) / Math.tan(camera.fov * Math.PI / 360);
+    const s = Math.max(26, Math.min(px * 2.5, 600));
+    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`; if (el.classList.contains("tgt")) el.style.width = el.style.height = s + "px"; el.style.opacity = 1; el.style.pointerEvents = "auto";
+  };
+
+  /* ================================================================ log + ledger */
+  const logH = $("#log-h"), logT = $("#log-t"), logC = $("#log-c"), logEl = $("#log");
+  const log = (h, t, ctl = "") => { logH.textContent = h; logT.textContent = t; logC.innerHTML = ctl; logEl.classList.remove("min"); };
+  $("#log-min").onclick = () => logEl.classList.toggle("min");
+  const chips = $("#chips");
+  BODIES.forEach((b) => { const c = document.createElement("button"); c.type = "button"; c.className = "chip"; c.textContent = b.n; c.title = `${b.name} · ${b.tool}`; c.style.setProperty("--a", b.color); c.onclick = () => focusOn(b.key); chips.append(c); b.chip = c; });
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem("cylos-astral") || "{}"); } catch (e) {}
+  const save = () => { try { localStorage.setItem("cylos-astral", JSON.stringify({ done: Object.fromEntries(BODIES.map((b) => [b.key, b.done])), arrived })); } catch (e) {} };
+  let arrived = !!saved.arrived;
+  BODIES.forEach((b) => { b.done = !!(saved.done && saved.done[b.key]); });
+  const surveyed = () => BODIES.filter((b) => b.done).length;
+  const drawLedger = () => { $("#count").textContent = surveyed(); BODIES.forEach((b) => b.chip.classList.toggle("done", b.done)); $("#conj").hidden = surveyed() < 6; };
+  drawLedger();
+  const markDone = (b) => { if (b.done) return; b.done = true; save(); drawLedger(); const n = surveyed();
+    const m = $("#dossier .done-mark"); if (m) m.textContent = "● Surveyed";
+    if (n === 6) log("Log 07 · Drift", "All six bodies surveyed. Something is changing: their orbits are drifting toward one line. Observe the conjunction when you are ready.", `<button class="btn glow" type="button" id="log-conj">Observe the conjunction</button>`), $("#log-conj").onclick = conjunction;
+    else log(`Log ${String(BODIES.indexOf(b) + 1).padStart(2, "0")} · ${b.name} surveyed`, `${b.name} added to the catalogue. ${n} of six bodies surveyed. ${6 - n} remain.`); };
+
+  /* ================================================================ dossier */
+  const dossier = $("#dossier");
+  const fmtP = (b) => `${(b.P * 3.1).toFixed(0)} d`;
+  const dataHTML = (b) => `<dl class="data"><div><dt>Class</dt><dd>${b.cls}</dd></div><div><dt>Designation</dt><dd>${b.code}</dd></div><div><dt>Orbit</dt><dd>${(b.R * .055).toFixed(2)} AU${b.ecc ? ` · e ${b.ecc}` : ""}</dd></div><div><dt>Period</dt><dd>${fmtP(b)}</dd></div></dl>`;
+  const openDossier = (b) => {
+    dossier.style.setProperty("--a", b.color);
+    const nav = b.key === "star" ? "" : `<button class="btn" type="button" id="d-prev">◂ Prev</button><button class="btn" type="button" id="d-next">Next ▸</button>`;
+    let act = "";
+    if (b.key === "star") act = starAct();
+    else act = ACT[b.key].html();
+    dossier.innerHTML = `<div class="band"></div><div class="k"><span>${b.t} · ${b.code}</span><span class="done-mark">${b.done ? "● Surveyed" : b.key === "star" ? "" : "○ Not surveyed"}</span></div>
+      <h2>${b.name}</h2><p class="sub"><b>${b.tool}</b>${b.cls ? " · " + b.cls : ""}</p>
+      ${b.key === "star" ? "" : dataHTML(b)}
+      <p class="tale">${b.tale}</p>
+      <p class="fn"><b>In plain terms</b>${b.desc}</p>
+      <div class="scan"></div>
+      ${act}
+      <div class="foot"><button class="btn" type="button" id="d-back">Return to orbit</button><span style="display:flex;gap:8px">${nav}</span></div>`;
+    dossier.classList.add("on"); document.body.classList.add("focused"); dossier.scrollTop = 0;
+    $("#d-back").onclick = () => toSystem();
+    if (nav) { const i = BODIES.indexOf(b); $("#d-prev").onclick = () => focusOn(BODIES[(i + 5) % 6].key); $("#d-next").onclick = () => focusOn(BODIES[(i + 1) % 6].key); }
+    if (b.key !== "star") ACT[b.key].wire(b);
+  };
+  const closeDossier = () => { dossier.classList.remove("on"); document.body.classList.remove("focused"); };
+  starBody.tale = "CYLOS is the light all six bodies share. On its own it is only a star. With its worlds around it, it is a suite: one memory, one law, one way of making, shared between six very different places.";
+  starBody.desc = "CYLOS is CYLNDR's generative suite. Each body in this system is one of its six tools.";
+  const starAct = () => `<div class="act" data-t="Catalogue"><p class="out" style="font-size:15px">${surveyed()} of six bodies surveyed.${surveyed() === 6 ? " The conjunction is ready." : " Survey all six to see them align."}</p><div class="row"><button class="btn" type="button" onclick="document.getElementById('cat-open').click()">Open the catalogue</button></div></div>`;
+
+  /* ---- survey actions, one per body */
+  const typeOut = (el, s, done) => { if (reduce) { el.textContent = s; done && done(); return; } let i = 0; const step = () => { i += 2; el.textContent = s.slice(0, i); if (i < s.length) setTimeout(step, 16); else done && done(); }; step(); };
+  const ACT = {
+    core: {
+      html: () => `<div class="act" data-t="Survey action · Query the ring"><form class="row" id="q-form"><input type="text" id="q-in" value="How do we deliver to a broadcaster?" aria-label="Question for Mnemos"><button class="btn solid" type="submit">Query</button></form><p class="out" id="q-out">Ask Mnemos anything the makers have learned.</p><ul class="cites" id="q-cites"></ul><p class="readout" style="text-align:left">Example answers. The real Core answers from CYLNDR's own knowledge.</p></div>`,
+      wire: (b) => { const A = [
+          [/deliver|broadcast|handover|master/i, "Masters with stems, captions and a clock slate, then log the handover the same day.", ["Band 12 · Delivery SOP", "Band 31 · Debrief, broadcast spot"]],
+          [/cast|talent|actor|who/i, "The last spot used two leads from the talent history. Both are marked to rebook.", ["Band 7 · Talent history", "Band 19 · Booking notes"]],
+          [/debrief|grad|colour|color|learn/i, "Lock the edit before colour, and book the grade a day early. Three debriefs say so.", ["Band 22 · Debrief", "Band 26 · Debrief", "Band 40 · Debrief"]]];
+        $("#q-form").onsubmit = (e) => { e.preventDefault(); const q = $("#q-in").value; const hit = A.find((a) => a[0].test(q)) || [0, "Nothing is laid down on that yet. Once someone writes it, Mnemos will keep it.", []];
+          b.pulse = 1; $("#q-cites").innerHTML = ""; setTimeout(() => typeOut($("#q-out"), hit[1], () => { $("#q-cites").innerHTML = hit[2].map((c) => `<li>${c}</li>`).join(""); markDone(b); }), reduce ? 0 : 900); }; },
+    },
+    portal: {
+      html: () => `<div class="act" data-t="Survey action · Send a brief"><div class="row"><input type="text" id="p-in" value="Summer launch, 15 seconds" aria-label="Brief"><button class="btn solid" type="button" id="p-go">Send</button></div><ol class="steps" id="p-steps"><li><span class="n">I</span>Generate<i></i></li><li><span class="n">II</span>QualityGate<i></i></li><li><span class="n">III</span>Review<i></i></li></ol><p class="readout" style="text-align:left">Example run with illustrative numbers.</p></div>`,
+      wire: (b) => { const S = ["Twelve variations generated.", "Nine keep the brand law. Three are turned back.", "One is released and resized for 16:9, 9:16, 4:5 and 1:1."];
+        $("#p-go").onclick = async () => { const go = $("#p-go"); go.disabled = true; const li = [...document.querySelectorAll("#p-steps li")]; li.forEach((l) => { l.className = ""; l.querySelector("i").textContent = ""; }); b.lit = [0, 0, 0];
+          for (let i = 0; i < 3; i++) { if (focus !== b) return; li[i].className = "on"; li[i].querySelector("i").textContent = "…"; b.lit = b.lit.map((_, j) => (j === i ? 1 : j < i ? .35 : 0)); b.pulse = .7; await new Promise((r) => setTimeout(r, reduce ? 50 : 1300)); li[i].className = "done"; li[i].querySelector("i").textContent = S[i]; }
+          b.lit = [1, 1, 1]; setTimeout(() => (b.lit = [0, 0, 0]), 2500); go.disabled = false; go.textContent = "Again"; markDone(b); }; },
+    },
+    zoetrope: {
+      html: () => `<div class="act" data-t="Survey action · Spin the crown"><canvas class="frames" id="z-cv" width="600" height="240" aria-label="What the slats show at the current speed"></canvas><div class="meter"><span class="band" style="left:25%;width:10%"></span><span class="needle" id="z-nd" style="left:0"></span></div><div class="zrow"><span><b id="z-f">1.0</b> frames a second</span><button class="btn solid" type="button" id="z-hold">Hold to spin</button></div><p class="out" id="z-out">Hold until the runner moves, then keep it in the band.</p></div>`,
+      wire: (b) => { const h = $("#z-hold"); const set = (v) => { b.spin.hold = v; h.textContent = v ? "Spinning…" : "Hold to spin"; };
+        h.onpointerdown = (e) => { e.preventDefault(); try { h.setPointerCapture(e.pointerId); } catch (err) {} set(true); };
+        h.onpointerup = h.onpointercancel = h.onlostpointercapture = () => set(false);
+        h.onkeydown = (e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); set(true); } }; h.onkeyup = (e) => { if (e.key === " " || e.key === "Enter") set(false); };
+        b.spin.band = 0; b.zui = { cv: $("#z-cv"), nd: $("#z-nd"), f: $("#z-f"), out: $("#z-out") }; },
+    },
+    apps: {
+      html: () => `<div class="act" data-t="Survey action · Visit the swarm"><p class="out" style="font-size:15px" id="a-out">Choose a rock to see what it is, then leave a tool of your own.</p><div class="rocks" id="a-rocks">${BY.apps.named.map((m, i) => `<button type="button" data-i="${i}" class="${m.userData.mine ? "mine" : ""}">${m.userData.name}</button>`).join("")}</div><form class="row" id="a-form"><input type="text" id="a-in" value="My shortcut" maxlength="28" aria-label="Name of your tool"><button class="btn solid" type="submit">Leave it</button></form><p class="readout" style="text-align:left">Examples of the kind of tool in the swarm.</p></div>`,
+      wire: (b) => { document.querySelectorAll("#a-rocks button").forEach((btn) => (btn.onclick = () => pickRock(b.named[+btn.dataset.i])));
+        $("#a-form").onsubmit = (e) => { e.preventDefault(); const name = $("#a-in").value.trim() || "My shortcut"; const m = b.addRock(.6, 2.2 + b.named.length * .32, .1, name, "Left by you", new T.Color("#e6c3ab")); m.userData.mine = true; b.named.push(m);
+          const sub = mkLabel({ color: b.color }, { name }); sub.onclick = () => pickRock(m); subLabels.push({ m, e: sub }); openDossier(b); pickRock(m); markDone(b); }; },
+    },
+    deck: {
+      html: () => { const b = BY.deck; const COPY = ["Summer is when people ride further.", "Most riders stop at twenty kilometres.", "Make the next twenty a story.", "Three routes, three films.", "Approve the pilot route."]; const order = b.ordered > .5 ? [0, 1, 2, 3, 4] : [3, 0, 4, 1, 2];
+        return `<div class="act" data-t="Survey action · Measure a brief"><div class="row"><input type="text" id="d-in" value="Pitch a summer campaign for a cycling brand" aria-label="Brief"><button class="btn solid" type="button" id="d-go">Measure</button></div><ol class="slides ${b.ordered > .5 ? "ordered" : ""}" id="d-list">${order.map((i) => `<li><b>${b.texts[i][0]}</b>${b.texts[i][1]}<i>${b.ordered > .5 ? COPY[i] : "…"}</i></li>`).join("")}</ol><p class="readout" style="text-align:left">Example slides for the sample brief.</p></div>`; },
+      wire: (b) => { $("#d-go").onclick = () => { b.orderGoal = 1; setTimeout(() => { if (focus === b) { openDossier(b); markDone(b); } }, reduce ? 50 : 1600); }; },
+    },
+    type: {
+      html: () => `<div class="act" data-t="Survey action · Give Glyph a word"><form class="row" id="t-form"><input type="text" id="t-in" value="${BY.type.word}" maxlength="18" aria-label="Word for the tail"><button class="btn solid" type="submit">Release</button></form><p class="out" id="t-out">The tail carries whatever you write.</p></div>`,
+      wire: (b) => { $("#t-form").onsubmit = (e) => { e.preventDefault(); b.word = ($("#t-in").value.trim() || "CYLOS").toUpperCase(); b.wi = 0; b.rate = .14; setTimeout(() => (b.rate = .22), 3000); $("#t-out").textContent = `“${b.word}” is in the tail now, letter by letter.`; markDone(b); }; },
+    },
+  };
+  const pickRock = (m) => { const b = BY.apps; b.rocks.forEach((r) => (r.userData.hi = r === m)); const i = b.named.indexOf(m);
+    document.querySelectorAll("#a-rocks button").forEach((btn) => btn.classList.toggle("on", +btn.dataset.i === i));
+    const out = $("#a-out"); if (out) out.textContent = `${m.userData.name}. ${m.userData.sub}.`; };
+
+  /* zoetrope frame strip: shows the frame the slats are currently on */
+  const drawRunner = (cv, ang, fps) => { const x = cv.getContext("2d"), w = cv.width, h = cv.height; x.clearRect(0, 0, w, h);
+    const f = Math.floor(((ang % 360) + 360) % 360 / 30) % 12, ph = f / 12 * TAU, live = fps >= 10 && fps <= 14, blur = fps > 14;
+    x.strokeStyle = "rgba(235,230,218,.12)"; x.lineWidth = 1; for (let i = 0; i < 12; i++) { x.beginPath(); x.moveTo(i * w / 12, 0); x.lineTo(i * w / 12, h); x.stroke(); }
+    const draw = (p, a) => { x.globalAlpha = a; x.strokeStyle = "#cfe6c2"; x.lineWidth = 7; x.lineCap = "round"; const cx = w / 2, hip = [cx, h * .56], sh = [cx + 6, h * .3];
+      const leg = (o) => { const k = Math.sin(p + o); const knee = [hip[0] + k * 34, hip[1] + 34 + Math.max(0, -k) * 6]; const foot = [knee[0] + Math.sin(p + o - 1) * 22 - 8, h * .9 - Math.max(0, Math.sin(p + o + .6)) * 22]; x.beginPath(); x.moveTo(...hip); x.lineTo(...knee); x.lineTo(...foot); x.stroke(); };
+      const arm = (o) => { const k = Math.sin(p + o); x.beginPath(); x.moveTo(...sh); x.lineTo(sh[0] - k * 26, sh[1] + 26); x.lineTo(sh[0] - k * 36 + 14, sh[1] + 40); x.stroke(); };
+      leg(0); leg(Math.PI); arm(Math.PI); arm(0); x.beginPath(); x.moveTo(...hip); x.lineTo(...sh); x.stroke(); x.beginPath(); x.arc(sh[0] + 4, sh[1] - 20, 13, 0, TAU); x.stroke(); };
+    if (blur) { for (let i = 0; i < 6; i++) draw(ph + i * .5, .12); } else draw(ph, live ? 1 : .55);
+    x.globalAlpha = 1; x.fillStyle = live ? "#cfe6c2" : "rgba(235,230,218,.55)"; x.font = "22px 'JetBrains Mono', monospace"; x.fillText(`FRAME ${String(f + 1).padStart(2, "0")} / 12`, 16, 32); };
+
+  /* ================================================================ navigation */
+  let phase = arrived ? "system" : "galaxy";
+  const approach = () => { const h0 = $("#hero"); if (h0) h0.classList.add("off"); setTimeout(() => document.body.classList.remove("pre-hero"), 900);
+    phase = "system"; arrived = true; save(); focus = null; closeDossier(); cam.tGoal.set(0, 0, 0); cam.dGoal = isPhone() ? 190 : 130; cam.phGoal = 1.06; cam.rate = .65;
+    log("Log 01 · Arrival", "Six bodies, each unlike the others, circling one star. Select a body to survey it. Drag to turn the system, scroll or pinch to change scale. Survey all six and watch what they do.", ""); };
+  const toSystem = () => { focus = null; closeDossier(); cam.tGoal.set(0, 0, 0); cam.dGoal = Math.max(cam.dGoal, isPhone() ? 170 : 120); cam.rate = 1.8; phase = "system"; };
+  const toGalaxy = () => { focus = null; closeDossier(); cam.tGoal.copy(G).multiplyScalar(.45); cam.dGoal = 7600; cam.phGoal = .62; cam.rate = 1.2; phase = "galaxy";
+    log("Log 00 · The arm", "From out here CYLOS is one point among forty thousand. Select it, or zoom in, to return.", `<button class="btn solid" type="button" id="re-approach">Return to CYLOS</button>`); $("#re-approach").onclick = approach; };
+  const focusOn = (key) => {
+    if (conj.on) return;
+    const b = key === "star" ? starBody : BY[key]; if (!b) return;
+    phase = "system"; arrived = true; focus = b; cam.dGoal = b.view * (isPhone() ? 1.25 : 1); cam.rate = 2.7; cam.phGoal = .98;
+    if (key !== "star") { const p = b.group.position; const sunward = Math.atan2(-p.z, -p.x) + .75; let d = ((sunward - cam.thGoal + Math.PI) % TAU + TAU) % TAU - Math.PI; cam.thGoal += d; }
+    BODIES.forEach((o) => { o.el.classList.toggle("focus", o === b); o.orbitMat.opacity = o === b ? .55 : .18; });
+    openDossier(b);
+    if (key !== "star") log(`Log ${String(BODIES.indexOf(b) + 1).padStart(2, "0")} · ${b.name}`, b.done ? `${b.name} is already in the catalogue. Its survey action stays open if you want to look again.` : `Closing on ${b.name}. Complete its survey action to add it to the catalogue.`);
+  };
+  $("#approach").onclick = approach;
+  const heroEl = $("#hero"); if (heroEl) heroEl.onclick = approach;
+  const showIntro = () => { if (conj.on) return; closeDossier(); focus = null; cam.tGoal.set(0, 0, 0); cam.dGoal = HERO_DIST; cam.phGoal = 1.06; cam.rate = 1.1;
+    document.body.classList.add("pre-hero"); const h2 = $("#hero"); if (h2) h2.classList.remove("off"); };
+  const brandEl = document.querySelector(".brand"); if (brandEl) { brandEl.style.cursor = "pointer"; brandEl.title = "Return to the intro"; brandEl.onclick = showIntro; }
+  $("#v-galaxy").onclick = toGalaxy; $("#v-system").onclick = () => (phase === "galaxy" ? approach() : toSystem());
+  $("#z-in").onclick = () => (cam.dGoal = Math.max(minDist(), cam.dGoal / 1.6));
+  $("#z-out").onclick = () => (cam.dGoal = Math.min(maxDist, cam.dGoal * 1.6));
+  let timeScale = 1, tsGoal = 1, userTs = 1;
+  document.querySelectorAll("[data-ts]").forEach((btn) => (btn.onclick = () => { userTs = +btn.dataset.ts; document.querySelectorAll("[data-ts]").forEach((x) => x.setAttribute("aria-pressed", x === btn)); }));
+
+  /* ================================================================ pointer: drag to turn, wheel / pinch to zoom, click to pick */
+  const ptrs = new Map(); let drag = null, pinch = null;
+  const ray = new T.Raycaster(), ndc = new T.Vector2();
+  const pickAt = (cx, cy) => { ndc.set(cx / W * 2 - 1, -(cy / H) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const objs = [starHit, ...BODIES.map((b) => b.hit)]; if (focus === BY.apps) objs.push(...BY.apps.named);
+    const hit = ray.intersectObjects(objs, false)[0]; return hit ? hit.object : null; };
+  canvas.addEventListener("pointerdown", (e) => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 1) drag = { x: e.clientX, y: e.clientY, moved: 0 }; else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), g: cam.dGoal }; drag = null; } });
+  canvas.addEventListener("pointermove", (e) => {
+    const p = ptrs.get(e.pointerId); if (p) { p.x = e.clientX; p.y = e.clientY; }
+    if (pinch && ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); cam.dGoal = Math.min(maxDist, Math.max(minDist(), pinch.g * pinch.d / Math.max(20, d))); cam.rate = 3; return; }
+    if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
+      if (drag.moved > 4) { canvas.classList.add("dragging"); cam.thGoal += dx * .005; cam.phGoal = Math.min(Math.PI - .12, Math.max(.12, cam.phGoal - dy * .005)); } }
+    else { const o = pickAt(e.clientX, e.clientY); canvas.classList.toggle("hovering", !!o); BODIES.forEach((b) => b.el.classList.toggle("on", o && o.userData.key === b.key)); }
+    ptr.x = e.clientX; ptr.y = e.clientY;
+  });
+  const up = (e) => { const wasDrag = drag && drag.moved > 4; ptrs.delete(e.pointerId); canvas.classList.remove("dragging");
+    if (ptrs.size < 2) pinch = null;
+    if (drag && !wasDrag && e.type === "pointerup") { const o = pickAt(e.clientX, e.clientY); if (o) { if (o.userData.key) { if (phase === "galaxy") approach(); else focusOn(o.userData.key); } else if (o.userData.name) pickRock(o); } }
+    if (ptrs.size === 0) drag = null; };
+  canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up);
+  canvas.addEventListener("wheel", (e) => { e.preventDefault(); const k = Math.exp(Math.max(-60, Math.min(60, e.deltaY)) * .0035); cam.dGoal = Math.min(maxDist, Math.max(minDist(), cam.dGoal * k)); cam.rate = 3.2; }, { passive: false });
+  addEventListener("keydown", (e) => { if (e.target.tagName === "INPUT") return;
+    if (e.key >= "1" && e.key <= "6") focusOn(BODIES[+e.key - 1].key);
+    else if (e.key === "Escape" || e.key === "0") { if ($("#cat").classList.contains("on")) closeCat(); else toSystem(); }
+    else if (e.key === "+" || e.key === "=") $("#z-in").click(); else if (e.key === "-") $("#z-out").click(); else if (e.key.toLowerCase() === "g") toGalaxy(); });
+  const ptr = { x: innerWidth / 2, y: innerHeight / 2 };
+
+  /* ================================================================ conjunction + catalogue */
+  const conj = { on: false, blend: 0, goal: 0, A: 0 };
+  const beamMat = new T.LineBasicMaterial({ color: 0xffe2b0, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false });
+  const beamGeo = new T.BufferGeometry(); beamGeo.setAttribute("position", new T.Float32BufferAttribute([0, 0, 0, 1, 0, 0], 3)); const beam = new T.Line(beamGeo, beamMat); scene.add(beam);
+  const beamGlow = new T.Mesh(new T.CylinderGeometry(.25, .25, 1, 12, 1, true), new T.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide })); scene.add(beamGlow);
+  const conjunction = () => {
+    if (conj.on) return; conj.on = true; focus = null; closeDossier(); $("#conj").hidden = true;
+    conj.A = BY.core.th; conj.goal = 1; userTs = 0; document.querySelectorAll("[data-ts]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.ts === "0"));
+    cam.tGoal.set(0, 0, 0); cam.dGoal = isPhone() ? 230 : 150; cam.phGoal = .38; cam.rate = 1.1;
+    log("Log 08 · Conjunction", "The six bodies are falling into one line with the star. Watch.", "");
+    setTimeout(() => { $("#title").classList.add("on"); }, reduce ? 200 : 4200);
+    setTimeout(() => { $("#title").classList.remove("on"); log("Log 08 · Conjunction", "For a moment the light of CYLOS passes through all six at once: memory, production, motion, shared tools, decks and type. Separate worlds, one light. That is the suite.", `<button class="btn solid" type="button" id="log-cat">Open the catalogue</button><button class="btn" type="button" id="log-rel">Release the alignment</button>`); $("#log-cat").onclick = openCat; $("#log-rel").onclick = release; }, reduce ? 1200 : 9600);
+  };
+  const release = () => { conj.goal = 0; userTs = 1; document.querySelectorAll("[data-ts]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.ts === "1")); setTimeout(() => { conj.on = false; $("#conj").hidden = surveyed() < 6; }, 3000);
+    log("Log 09 · Release", "The bodies drift back onto their own paths. The catalogue stays open to you; every body can still be visited.", ""); };
+  $("#conj").onclick = conjunction;
+  const cat = $("#cat");
+  const openCat = () => { cat.innerHTML = `<h3>SURVEY CATALOGUE · CYLOS</h3><p>Six bodies, one star. What each world is in plain terms.</p><div class="wrap-x"><table><thead><tr><th>Target</th><th>Body</th><th>Tool</th><th>Class</th><th>Function</th></tr></thead><tbody>${BODIES.map((b) => `<tr style="--a:${b.color}"><td class="m">${b.t}<br>${b.code}</td><td class="b"><i></i>${b.name}</td><td>${b.tool}</td><td class="m">${b.cls}</td><td>${b.desc}</td></tr>`).join("")}</tbody></table></div><div class="foot"><button class="btn" type="button" id="cat-x">Close</button></div>`;
+    cat.classList.add("on"); $("#cat-x").onclick = closeCat; };
+  const closeCat = () => cat.classList.remove("on");
+  const catOpen = document.createElement("button"); catOpen.id = "cat-open"; catOpen.hidden = true; catOpen.onclick = openCat; document.body.append(catOpen);
+
+  /* ================================================================ loop */
+  const clock = new T.Clock(); let simT = 0, realT = 0;
+  const lerpAng = (a, b, t) => { let d = ((b - a + Math.PI) % TAU + TAU) % TAU - Math.PI; return a + d * t; };
+  const readout = $("#readout");
+  const fmtRA = (rad) => { let h = ((rad / TAU) * 24 + 24) % 24; const hh = Math.floor(h), mm = Math.floor((h - hh) * 60), ss = Math.floor(((h - hh) * 60 - mm) * 60); return `${String(hh).padStart(2, "0")}h ${String(mm).padStart(2, "0")}m ${String(ss).padStart(2, "0")}s`; };
+  const fmtDec = (rad) => { const d = rad * 180 / Math.PI, s = d < 0 ? "−" : "+", a = Math.abs(d), dd = Math.floor(a), mm = Math.floor((a - dd) * 60); return `${s}${String(dd).padStart(2, "0")}° ${String(mm).padStart(2, "0")}′`; };
+  let rafId = 0, roTick = 0;
+  const frame = () => {
+    rafId = requestAnimationFrame(frame);
+    const dt = Math.min(.05, clock.getDelta()); realT += dt;
+    tsGoal = focus ? Math.min(userTs, .15) : userTs; timeScale += (tsGoal - timeScale) * Math.min(1, dt * 3);
+    simT += dt * timeScale;
+    conj.blend += (conj.goal - conj.blend) * Math.min(1, dt * .9);
+    const cb = conj.blend * conj.blend * (3 - 2 * conj.blend);
+
+    // bodies
+    for (const b of BODIES) {
+      if (b.ecc) { const r = b.R * (1 - b.ecc * b.ecc) / (1 + b.ecc * Math.cos(b.th)); b.th += b.h / (r * r) * dt * timeScale; }
+      else b.th = b.ph + simT * TAU / b.P;
+      const th = conj.blend > .001 ? lerpAng(b.th, conj.A, cb) : b.th;
+      orbitPoint(b, th, b.group.position);
+      if (b.key === "deck") { b.ordered += ((b.orderGoal || 0) - b.ordered) * Math.min(1, dt * 2.2); }
+      b.update(dt, realT);
+    }
+    // star
+    starMat.uniforms.uT.value = realT; starMat.uniforms.uFlare.value = cb * .5; star.rotation.y += dt * .02;
+    const flare = 1 + cb * (1.4 + .3 * Math.sin(realT * 3)); starGlow.scale.setScalar(46 * flare); starHalo.scale.setScalar(160 * (1 + cb * .8));
+    if (cb > .02) { const dir = new T.Vector3(); orbitPoint({ R: 1, inc: 0 }, conj.A, dir).normalize(); const L = 78; const pos = beamGeo.attributes.position; pos.setXYZ(1, dir.x * L, dir.y * L, dir.z * L); pos.needsUpdate = true;
+      beamMat.opacity = cb * .8; beamGlow.material.opacity = cb * .22; beamGlow.scale.set(1 + cb, L, 1 + cb); beamGlow.position.copy(dir).multiplyScalar(L / 2); beamGlow.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir); }
+    else { beamMat.opacity = 0; beamGlow.material.opacity = 0; }
+
+    // camera
+    if (focus) focus.group.getWorldPosition(cam.tGoal);
+    const k = 1 - Math.exp(-dt * cam.rate * (reduce ? 3 : 1)), ka = 1 - Math.exp(-dt * 7);
+    cam.target.lerp(cam.tGoal, k);
+    cam.dist = Math.exp(Math.log(cam.dist) + (Math.log(cam.dGoal) - Math.log(cam.dist)) * k);
+    cam.theta += (cam.thGoal - cam.theta) * ka; cam.phi += (cam.phGoal - cam.phi) * ka;
+    if (!focus && !conj.on && phase === "system" && !drag && !reduce) cam.thGoal += dt * .012;
+    camera.position.set(cam.target.x + cam.dist * Math.sin(cam.phi) * Math.cos(cam.theta), cam.target.y + cam.dist * Math.cos(cam.phi), cam.target.z + cam.dist * Math.sin(cam.phi) * Math.sin(cam.theta));
+    camera.lookAt(cam.target);
+    const open = dossier.classList.contains("on");
+    cam.offGoal = open && !isPhone() ? W * .16 : 0; cam.offYGoal = open && isPhone() ? H * .2 : 0;
+    cam.off += (cam.offGoal - cam.off) * ka; cam.offY += (cam.offYGoal - cam.offY) * ka;
+    if (Math.abs(cam.off) > .5 || Math.abs(cam.offY) > .5) camera.setViewOffset(W, H, cam.off, cam.offY, W, H); else camera.clearViewOffset();
+    camera.updateMatrixWorld();
+
+    // auto phase changes from free zooming
+    if (phase === "galaxy" && cam.dGoal < 650 && cam.dist < 900 && !conj.on) { if (!arrived) approach(); else phase = "system"; }
+    if (phase === "system" && cam.dGoal > 1500 && cam.dist > 1200 && !focus) { phase = "galaxy"; log("Log 00 · The arm", "From out here CYLOS is one point among forty thousand. Select it, or zoom in, to return.", `<button class="btn solid" type="button" id="re-approach">Return to CYLOS</button>`); $("#re-approach").onclick = approach; }
+    if (focus && cam.dGoal > focus.view * 5) toSystem();
+
+    // fades by scale
+    const sys = Math.max(0, Math.min(1, (1100 - cam.dist) / 600));
+    chartMat.opacity = .07 * sys; BODIES.forEach((b) => (b.orbit.material.opacity = (focus === b ? .55 : conj.on ? .08 : .18) * sys));
+    BODIES.forEach((b) => { place(b.el, b.group.position, b.size, sys > .3 && !conj.on); b.el.style.opacity = parseFloat(b.el.style.opacity || 0) * sys; });
+    place(starBody.el, star.position, 4.2, sys > .3 && !conj.on && !focus);
+    place(marker, star.position, 30, sys < .5); marker.style.opacity = parseFloat(marker.style.opacity || 0) * (1 - sys * 2);
+    subLabels.forEach(({ m, e }) => { m.getWorldPosition(v4); place(e, v4, .3, focus === BY.apps); });
+
+    // zoetrope readout
+    const z = BY.zoetrope; if (focus === z && z.zui && z.zui.cv.isConnected) { const f = z.spin.fps; z.zui.nd.style.left = Math.min(100, f / 40 * 100) + "%"; z.zui.f.textContent = f.toFixed(1); drawRunner(z.zui.cv, z.spin.ang, f);
+      if (f >= 10 && f <= 14) { z.spin.band += dt; z.zui.out.textContent = z.done ? "It moves. Twelve slats, one runner." : `It moves. Hold it there… ${Math.max(0, 2 - z.spin.band).toFixed(1)}s`; if (z.spin.band >= 2 && !z.done) markDone(z); }
+      else { z.spin.band = Math.max(0, z.spin.band - dt * .5); z.zui.out.textContent = f > 14 ? "Too fast. The runner blurs into smoke. Ease off." : f > 3 ? "Faster. The slats are still slats." : "Hold until the runner moves, then keep it in the band."; } }
+
+    // readout (throttled)
+    if ((roTick += dt) > .12) { roTick = 0; ndc.set(ptr.x / W * 2 - 1, -(ptr.y / H) * 2 + 1); ray.setFromCamera(ndc, camera); const d = ray.ray.direction;
+      const range = cam.dist > 700 ? `${(cam.dist / 1000 * 11).toFixed(1)} kly` : `${(cam.dist * .055).toFixed(2)} AU`;
+      readout.innerHTML = `RA <b>${fmtRA(Math.atan2(d.z, d.x))}</b> · DEC <b>${fmtDec(Math.asin(Math.max(-1, Math.min(1, d.y))))}</b><br>RANGE <b>${range}</b> · T+ <b>${(simT * 3.1).toFixed(1)} d</b> · ${focus ? `<b>${focus.name}</b>` : phase === "galaxy" ? "<b>GALAXY</b>" : "<b>SYSTEM</b>"}`; }
+
+    renderer.render(scene, camera);
+  };
+  if (arrived) { cam.tGoal.set(0, 0, 0); cam.target.set(0, 0, 0); cam.dist = cam.dGoal = isPhone() ? 190 : 130; cam.phi = cam.phGoal = 1.06;
+    log("Log 01 · Return", `Back in orbit around CYLOS. ${surveyed()} of six bodies surveyed. Select a body to continue the survey.`, surveyed() === 6 ? `<button class="btn glow" type="button" id="log-conj2">Observe the conjunction</button>` : ""); const lc = $("#log-conj2"); if (lc) lc.onclick = conjunction; }
+  else { phase = "system"; cam.theta = cam.thGoal = .9; cam.phi = cam.phGoal = 1.06; cam.target.set(0, 0, 0); cam.tGoal.set(0, 0, 0); cam.dist = cam.dGoal = HERO_DIST;
+    document.body.classList.add("pre-hero"); }
+  frame();
+  const restart = () => { cancelAnimationFrame(rafId); clock.getDelta(); frame(); };
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { clock.getDelta(); } });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { BY.type.letters.forEach((s) => s.material.needsUpdate = true); });
+})();
+</script>
