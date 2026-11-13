@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="The six tools of the CYLOS generative suite as a book of gods, with engravings by Hendrick Goltzius (1592) printed in blue on cream.">
+<style>body{margin:0}</style>
+<title>The Gods of CYLOS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500&family=GFS+Didot&display=swap">
+<style>
+/* Layout: an antique book printed in one blue ink on cream. Spread I is frontispiece + title page; then a table of contents whose entries preview each plate; then one chapter (plate + text page) per god; then a colophon. Plates are Goltzius's 1592 engravings. Single-theme by choice: a printed object. */
+:root {
+  --paper: #D8D3A7;
+  --ink: #0F0F9B;
+  --ink-2: color-mix(in srgb, #0F0F9B 72%, #D8D3A7);
+  --ink-3: color-mix(in srgb, #0F0F9B 50%, #D8D3A7);
+  --rule: color-mix(in srgb, #0F0F9B 60%, #D8D3A7);
+  --mat: color-mix(in srgb, #D8D3A7 82%, #ffffff);
+  --f-text: "EB Garamond", "Garamond", "Iowan Old Style", "Times New Roman", serif;
+  --f-greek: "GFS Didot", "Didot", "Bodoni 72", "Times New Roman", serif;
+  --ease: cubic-bezier(.25, .6, .2, 1);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { background: var(--paper); color: var(--ink); font: 400 19px/1.6 var(--f-text); -webkit-font-smoothing: antialiased; font-variant-numeric: oldstyle-nums; }
+body::after { content: ""; position: fixed; z-index: 50; pointer-events: none;
+  top: max(10px, env(safe-area-inset-top, 0px)); bottom: max(10px, env(safe-area-inset-bottom, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px));
+  border: 1px solid var(--ink); box-shadow: inset 0 0 0 3px var(--paper), inset 0 0 0 4px var(--ink); }
+a { color: inherit; }
+img { display: block; max-width: 100%; height: auto; }
+::selection { background: var(--ink); color: var(--paper); }
+:focus-visible { outline: 1px solid var(--ink); outline-offset: 4px; }
+
+.wrap { max-width: 1160px; margin-inline: auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.leaf { padding-inline: clamp(14px, 4vw, 52px); }
+.caps { font-size: .72em; letter-spacing: .22em; text-transform: uppercase; }
+.sc { font-size: .8em; letter-spacing: .16em; text-transform: uppercase; }
+.orn { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 22px auto; width: min(240px, 70%); }
+.orn i { flex: 1; height: 1px; background: var(--rule); }
+.orn b { width: 7px; height: 7px; border: 1px solid var(--ink); transform: rotate(45deg); }
+
+/* running head */
+.head { display: flex; justify-content: space-between; gap: 16px; padding-block: 34px 0; color: var(--ink-2); border-bottom: 1px solid var(--rule); padding-bottom: 10px; }
+.head a { text-decoration: none; }
+.head a:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+/* spreads: plate on the verso, text on the recto */
+.spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(28px, 6vw, 84px); align-items: center; padding-block: clamp(40px, 7vw, 96px); }
+.spread + .spread { border-top: 1px solid var(--rule); }
+.plate { margin: 0; justify-self: center; width: 100%; max-width: 470px; }
+.plate .mat { background: var(--mat); padding: clamp(10px, 1.6vw, 18px); border: 1px solid var(--rule); box-shadow: 0 1px 0 var(--rule), 0 26px 50px -38px var(--ink); }
+.plate img { width: 100%; }
+.plate figcaption { margin-top: 12px; text-align: center; font-size: 15px; line-height: 1.4; color: var(--ink-2); text-wrap: balance; }
+@media (max-width: 820px) { .spread { grid-template-columns: minmax(0, 1fr); } .plate { max-width: 400px; } }
+
+/* title page */
+.title { text-align: center; }
+.title .greek { font: 400 22px/1 var(--f-greek); letter-spacing: .4em; margin-right: -.4em; color: var(--ink-2); }
+.title .pre { margin: 18px 0 0; }
+.title h1 { margin: 6px 0 0; font: 400 clamp(64px, 9.5vw, 128px)/.95 var(--f-text); letter-spacing: .16em; margin-right: -.16em; }
+.title .or { margin: 16px 0 0; font-size: clamp(20px, 2.1vw, 25px); }
+.title .being { margin: 0 auto; max-width: 30em; font-size: 17px; line-height: 1.55; color: var(--ink-2); text-wrap: balance; }
+.title .imprint { margin: 0; letter-spacing: .3em; }
+.title .go { display: inline-block; margin-top: 30px; text-decoration: none; border-bottom: 1px solid var(--rule); padding-bottom: 2px; }
+.title .go:hover { border-color: var(--ink); }
+
+/* contents */
+.contents h2, .colophon h2 { margin: 0; text-align: center; font: 400 15px/1 var(--f-text); letter-spacing: .4em; margin-right: -.4em; text-transform: uppercase; }
+.toc { list-style: none; margin: 28px 0 0; padding: 0; counter-reset: plate; }
+.toc a { display: grid; grid-template-columns: 3.2em minmax(0, max-content) minmax(1em, 1fr) auto; align-items: baseline; gap: 10px; padding: 14px 4px; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent); transition: padding .4s var(--ease), background .4s; }
+.toc a .n { color: var(--ink-3); letter-spacing: .1em; }
+.toc a .who { font-size: 21px; }
+.toc a .who small { display: block; font-size: 15px; color: var(--ink-2); letter-spacing: .02em; }
+.toc a .dots { border-bottom: 1px dotted var(--rule); transform: translateY(-.32em); min-width: 1em; }
+.toc a .tool { font-size: 14px; letter-spacing: .16em; text-transform: uppercase; }
+.toc a:hover, .toc a:focus-visible, .toc a.on { padding-left: 16px; background: color-mix(in srgb, var(--mat) 55%, transparent); }
+.toc a.on .n { color: var(--ink); }
+.toc-note { margin: 18px 0 0; font-size: 15px; color: var(--ink-2); text-align: center; }
+.preview { position: relative; }
+.preview img { transition: opacity .45s var(--ease); }
+.preview img.fade { opacity: 0; }
+@media (max-width: 820px) { .contents .plate { order: -1; max-width: 300px; } }
+@media (max-width: 480px) { .toc a { grid-template-columns: 2.6em minmax(0, 1fr) auto; } .toc a .dots { display: none; } }
+
+/* chapter */
+.chapter { scroll-margin-top: 20px; }
+.page { text-align: left; }
+.page .no { text-align: center; color: var(--ink-2); }
+.page h3 { margin: 10px 0 0; text-align: center; font: 400 clamp(54px, 7.4vw, 92px)/1.02 var(--f-greek); letter-spacing: .05em; margin-right: -.05em; }
+.page .role { margin: 10px 0 0; text-align: center; }
+.page .myth { margin: 0; text-align: justify; hyphens: auto; text-wrap: pretty; }
+.page .myth::first-letter { float: left; font: 400 4.1em/.78 var(--f-text); padding: .08em .1em 0 0; }
+.page h4 { margin: 30px 0 6px; font: 500 14px/1.3 var(--f-text); letter-spacing: .22em; text-transform: uppercase; }
+.page h4 + p { margin: 0; }
+.page .tool { color: var(--ink); }
+.page .why { color: var(--ink-2); }
+.turn { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; gap: 12px; margin-top: 38px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 16px; }
+.turn a { text-decoration: none; color: var(--ink-2); }
+.turn a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
+.turn .r { text-align: right; }
+.turn .folio { color: var(--ink-3); letter-spacing: .2em; }
+.swap { transition: opacity .4s var(--ease); }
+.swap.out { opacity: 0; }
+
+/* colophon */
+.colophon { text-align: center; padding-block: clamp(48px, 8vw, 104px) clamp(56px, 8vw, 110px); border-top: 1px solid var(--rule); }
+.colophon p { margin: 18px auto 0; max-width: 34em; font-size: 16px; line-height: 1.6; color: var(--ink-2); text-wrap: balance; }
+.colophon .finis { margin-top: 30px; color: var(--ink); letter-spacing: .5em; margin-right: -.5em; }
+
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap"><div class="leaf">
+  <header class="head caps"><span>The Gods of CYLOS</span><a href="#contents">Contents</a></header>
+
+  <section class="spread" aria-label="Frontispiece and title page">
+    <figure class="plate">
+      <div class="mat"><img src="plates/jupiter.jpg" width="1000" height="1626" alt="Engraving of Jupiter enthroned in a classical niche, a thunderbolt raised in his right hand and his eagle at his feet"></div>
+      <figcaption>Frontispiece. Jupiter, from <span class="sc">the Eight Classical Gods</span>, engraved by Hendrick Goltzius, 1592.</figcaption>
+    </figure>
+    <div class="title">
+      <div class="greek">ΚΥΚΛΟΣ</div>
+      <p class="pre caps">The Six Gods of</p>
+      <h1>CYLOS</h1>
+      <p class="or">or, the Patrons of Making</p>
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+      <p class="being">Being a true account of the six tools of the CYLNDR generative suite, and of the gods who keep them. With six plates after Hendrick Goltzius.</p>
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+      <p class="imprint caps">CYLNDR · MMXXVI</p>
+      <a class="go caps" href="#contents">Turn to the contents</a>
+    </div>
+  </section>
+
+  <section class="spread contents" id="contents" aria-labelledby="toc-h">
+    <figure class="plate preview">
+      <div class="mat"><img id="preview-img" src="plates/saturn.jpg" width="1000" height="1679" alt=""></div>
+      <figcaption id="preview-cap"></figcaption>
+    </figure>
+    <div>
+      <h2 id="toc-h">Contents</h2>
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+      <ol class="toc" id="toc"></ol>
+      <p class="toc-note">Each god keeps one tool of the suite. Choose a plate to read its chapter.</p>
+    </div>
+  </section>
+
+  <section class="spread chapter" id="chapter" aria-live="polite" aria-labelledby="god-name">
+    <figure class="plate">
+      <div class="mat"><img id="god-img" src="plates/saturn.jpg" width="1000" height="1679" alt=""></div>
+      <figcaption id="god-cap"></figcaption>
+    </figure>
+    <article class="page swap" id="god-page">
+      <p class="no caps" id="god-no"></p>
+      <h3 id="god-name"></h3>
+      <p class="role sc" id="god-role"></p>
+      <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+      <p class="myth" id="god-myth"></p>
+      <h4 id="god-tool-h"></h4>
+      <p class="tool" id="god-tool"></p>
+      <h4 id="god-why-h"></h4>
+      <p class="why" id="god-why"></p>
+      <nav class="turn" aria-label="Turn the page">
+        <a id="prev" href="#"></a><span class="folio" id="folio"></span><a class="r" id="next" href="#"></a>
+      </nav>
+    </article>
+  </section>
+
+  <footer class="colophon">
+    <h2>Colophon</h2>
+    <div class="orn" aria-hidden="true"><i></i><b></b><i></i></div>
+    <p>The plates are copper engravings by Hendrick Goltzius after designs by Polidoro da Caravaggio, from the series <span class="sc">Eight Classical Gods</span>, Haarlem, 1592. Rijksmuseum, Amsterdam; released into the public domain.</p>
+    <p>Reprinted here in a single blue ink on cream. Set in EB Garamond, with the Greek in GFS Didot.</p>
+    <p class="finis caps">Finis</p>
+  </footer>
+</div></div>
+
+<script>
+(() => {
+  const GODS = [
+    { k: "saturn", num: "I", latin: "SATVRNVS", gr: "ΚΡΟΝΟΣ", name: "Cronus", roman: "Saturn", role: "God of time and the harvest", tool: "Core",
+      alt: "Engraving of Saturn standing in a classical niche, holding a long scythe",
+      myth: "Cronus ruled the world in its Golden Age, before Zeus was born. The Romans called him Saturn, god of time and of the harvest, and Goltzius shows him carrying his scythe. Whatever had been sown, season after season, he gathered in.",
+      why: "Core gathers in what the makers have sown over the years: every SOP, every debrief, every name. Ask it a question and it answers from that harvest, showing where each part was found.",
+      desc: "AI knowledge capture, search and chat. SOPs, debriefs and talent history, answerable in plain language and cited back to the source." },
+    { k: "jupiter", num: "II", latin: "IVPPITER", gr: "ΖΕΥΣ", name: "Zeus", roman: "Jupiter", role: "Father of gods and men", tool: "Production Portal",
+      alt: "Engraving of Jupiter enthroned in a classical niche, a thunderbolt raised in his right hand and his eagle at his feet",
+      myth: "Zeus ruled Olympus from his throne, the eagle at his feet and the thunderbolt in his hand. He held every god to the oath they had sworn, and whoever broke it answered to him.",
+      why: "Production Portal holds every piece of work to the brand. Each brief passes through Generate, QualityGate and Review in turn, and nothing ships that breaks its word.",
+      desc: "Brand-governed production. Take a brief through Generate → QualityGate → Review, with a resizing room for every format." },
+    { k: "sol", num: "III", latin: "SOL", gr: "ΗΛΙΟΣ", name: "Helios", roman: "Sol", role: "The sun, driver of the daily chariot", tool: "Zoetrope",
+      alt: "Engraving of Sol standing in a classical niche with a bow, a quiver of arrows and a serpent at his feet",
+      myth: "Each morning Helios harnessed four horses and drove the sun across the sky from east to west, seeing everything beneath him. The Romans called him Sol. Goltzius arms him with Apollo's bow, which is why the serpent Python lies coiled at his feet.",
+      why: "Zoetrope carries a single prompt across the whole journey. Its director agents drive it scene by scene until a finished cut comes down at the other horizon.",
+      desc: "Agent-orchestrated video production. Go from prompt to finished cut through director-driven pipelines." },
+    { k: "vulcan", num: "IV", latin: "VVLCANVS", gr: "ΗΦΑΙΣΤΟΣ", name: "Hephaestus", roman: "Vulcan", role: "Smith of the gods", tool: "Apps",
+      alt: "Engraving of Vulcan standing in a classical niche in a leather apron, holding a hammer",
+      myth: "Hephaestus kept the forge of Olympus. He made the armour of Achilles, the chariot of the sun and the thrones the gods sat on. Each piece began as one god's need and ended as part of everyone's world.",
+      why: "Apps are the tools people here forged for their own work, then left at the forge because they turned out to fit everyone else.",
+      desc: "Tools people here built to solve a problem in their own work, then shared because they turned out to be useful to everyone else." },
+    { k: "bacchus", num: "V", latin: "BACHVS", gr: "ΔΙΟΝΥΣΟΣ", name: "Dionysus", roman: "Bacchus", role: "God of wine and the theatre", tool: "Deck Designer",
+      alt: "Engraving of Bacchus standing in a classical niche, crowned with vine leaves, a young satyr at his side",
+      myth: "Every tragedy and comedy in Athens was first staged at the festival of Dionysus, and his priest took the best seat in the front row. Goltzius crowns him with vine leaves and sets a young satyr at his side.",
+      why: "A pitch is a small piece of theatre. Deck Designer takes the brief, chooses its scenes from a template, puts them in order and writes the lines.",
+      desc: "Write a brief; Claude picks slides from a template, orders them and writes the copy." },
+    { k: "mercury", num: "VI", latin: "MERCVRIVS", gr: "ΕΡΜΗΣ", name: "Hermes", roman: "Mercury", role: "Messenger of the gods", tool: "Type Tool",
+      alt: "Engraving of Mercury standing in a classical niche in a winged hat, holding the caduceus",
+      myth: "Hermes wore the winged hat and carried the caduceus, and no message travelled faster than he did. One ancient writer credits him with inventing the letters of the alphabet after watching cranes fly in formation.",
+      why: "Type Tool sets letters in motion and carries them on to the video models.",
+      desc: "Animated text and motion graphics, composed in-browser and sent to AI video models." },
+  ];
+  const $ = (s) => document.querySelector(s);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const src = (g) => `plates/${g.k}.jpg`;
+  GODS.forEach((g) => { const i = new Image(); i.src = src(g); });
+  const caption = (g) => `Plate ${g.num}. ${g.roman}, inscribed ${g.latin}. Hendrick Goltzius, 1592.`;
+
+  /* ---------- contents */
+  const toc = $("#toc"), pImg = $("#preview-img"), pCap = $("#preview-cap");
+  toc.innerHTML = GODS.map((g) => `<li><a href="#${g.k}" data-k="${g.k}"><span class="n">${g.num}.</span><span class="who">${g.roman} <small>${g.gr} · ${g.role.toLowerCase()}</small></span><span class="dots" aria-hidden="true"></span><span class="tool">${g.tool}</span></a></li>`).join("");
+  let shown = "";
+  const preview = (k) => {
+    if (k === shown) return; shown = k;
+    const g = GODS.find((x) => x.k === k);
+    toc.querySelectorAll("a").forEach((a) => a.classList.toggle("on", a.dataset.k === k));
+    pCap.textContent = caption(g); pImg.alt = g.alt;
+    if (reduce) { pImg.src = src(g); return; }
+    pImg.classList.add("fade");
+    setTimeout(() => { pImg.src = src(g); pImg.onload = () => pImg.classList.remove("fade"); if (pImg.complete) pImg.classList.remove("fade"); }, 220);
+  };
+  toc.querySelectorAll("a").forEach((a) => {
+    a.addEventListener("mouseenter", () => preview(a.dataset.k));
+    a.addEventListener("focus", () => preview(a.dataset.k));
+  });
+
+  /* ---------- chapter */
+  const page = $("#god-page");
+  let current = "";
+  const fill = (g) => {
+    const i = GODS.indexOf(g), p = GODS[(i + 5) % 6], n = GODS[(i + 1) % 6];
+    $("#god-no").textContent = `Plate ${g.num}`;
+    $("#god-name").textContent = g.gr;
+    $("#god-role").textContent = `${g.name}, called ${g.roman} · ${g.role}`;
+    $("#god-myth").textContent = g.myth;
+    $("#god-tool-h").textContent = `Of the tool he keeps: ${g.tool}`;
+    $("#god-tool").textContent = g.desc;
+    $("#god-why-h").textContent = `Why ${g.name}`;
+    $("#god-why").textContent = g.why;
+    $("#god-img").src = src(g); $("#god-img").alt = g.alt;
+    $("#god-cap").textContent = caption(g);
+    const pv = $("#prev"), nx = $("#next");
+    pv.textContent = `← ${p.num}. ${p.roman}`; pv.href = `#${p.k}`;
+    nx.textContent = `${n.num}. ${n.roman} →`; nx.href = `#${n.k}`;
+    $("#folio").textContent = `— ${g.num} —`;
+  };
+  const open = (k, scroll, chosen = true) => {
+    const g = GODS.find((x) => x.k === k); if (!g) return;
+    if (k !== current) {
+      const first = !current; current = k;
+      if (first || reduce) fill(g);
+      else { page.classList.add("out"); setTimeout(() => { fill(g); page.classList.remove("out"); }, 260); }
+    }
+    preview(k);
+    if (chosen && location.hash !== `#${k}`) history.replaceState(null, "", `#${k}`);
+    if (scroll) $("#chapter").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  };
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest('a[href^="#"]'); if (!a) return;
+    const k = a.getAttribute("href").slice(1);
+    if (GODS.some((g) => g.k === k)) { e.preventDefault(); open(k, a.closest(".turn") ? false : true); }
+  });
+  addEventListener("hashchange", () => { const k = location.hash.slice(1); if (GODS.some((g) => g.k === k)) open(k, true); });
+
+  const start = location.hash.slice(1);
+  if (GODS.some((g) => g.k === start)) { open(start, false); setTimeout(() => $("#chapter").scrollIntoView({ block: "start" }), 80); }
+  else { open("saturn", false, false); }
+})();
+</script>
