@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Trials of CYLOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one dark stage, one marble plate at a time. Story beats fill the screen (cover); trials pull back so the whole relief is playable (fit). Dialogue and task bars sit at the bottom; a seven-dot eagle in the HUD tracks the heads you have woken. */
+:root {
+  --night: #121110;
+  --night-2: #1d1b19;
+  --marble: #e7e5e0;
+  --marble-2: #cfccc5;
+  --ink: #1d1c1a;
+  --ink-2: #5a5852;
+  --bronze: #b08a55;
+  --bronze-ink: #85673e;
+  --glow: #fff8ea;
+  --f-display: "Cinzel", "Trajan Pro", "Times New Roman", serif;
+  --f-tale: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+  --f-text: "Hanken Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --ease: cubic-bezier(.2,.7,.1,1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--night); color: var(--marble); font-family: var(--f-text); font-size: 15px; overflow: hidden; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--bronze); outline-offset: 3px; }
+::selection { background: var(--bronze); color: var(--night); }
+
+/* ---------- stage + plate */
+#stage { position: fixed; inset: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, var(--night-2), var(--night) 70%); }
+#box { position: absolute; left: 0; top: 0; width: 100px; height: 66px; transition: left .9s var(--ease), top .9s var(--ease), width .9s var(--ease), height .9s var(--ease); }
+#box.snap { transition: none; }
+#plate { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; -webkit-user-drag: none; animation: drift 14s ease-out both; }
+.fitmode #plate, .fitmode .lamp { -webkit-mask-image: radial-gradient(ellipse 74% 72% at 50% 50%, #000 66%, transparent 100%); mask-image: radial-gradient(ellipse 74% 72% at 50% 50%, #000 66%, transparent 100%); }
+@keyframes drift { from { transform: scale(1.06); } to { transform: scale(1); } }
+.lamp { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at var(--lx, 32%) var(--ly, 22%), color-mix(in srgb, var(--glow) 70%, transparent), transparent 36%), radial-gradient(circle at var(--lx, 32%) var(--ly, 22%), transparent 30%, color-mix(in srgb, var(--night) 34%, transparent) 95%); mix-blend-mode: soft-light; }
+#fx { position: absolute; inset: 0; }
+#veil { position: fixed; inset: 0; background: var(--night); pointer-events: none; opacity: 1; transition: opacity .55s var(--ease); z-index: 40; }
+#veil.off { opacity: 0; }
+.coverglow::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top, color-mix(in srgb, var(--night) 70%, transparent), transparent 38%), linear-gradient(to bottom, color-mix(in srgb, var(--night) 55%, transparent), transparent 18%); }
+
+/* ---------- HUD */
+.hud { position: fixed; top: 0; left: 0; right: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px)) 14px max(18px, env(safe-area-inset-left, 0px)); pointer-events: none; }
+.hud > * { pointer-events: auto; }
+.mark { font: 500 14px/1 var(--f-display); letter-spacing: .4em; color: var(--marble); text-shadow: 0 1px 12px var(--night); }
+.chapter { font: 500 10px/1.3 var(--f-text); letter-spacing: .28em; text-transform: uppercase; color: var(--marble-2); text-shadow: 0 1px 10px var(--night); flex: 1; text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-r { display: flex; align-items: center; gap: 10px; }
+.heads { width: 54px; height: 34px; display: block; }
+.heads circle { fill: none; stroke: var(--marble-2); stroke-width: 1; transition: fill .6s, stroke .6s; }
+.heads circle.lit { fill: var(--bronze); stroke: var(--bronze); }
+.heads circle.seventh { stroke-dasharray: 2 2; }
+.heads circle.seventh.lit { fill: var(--glow); stroke: var(--glow); stroke-dasharray: none; }
+.pill { border: 1px solid color-mix(in srgb, var(--marble) 35%, transparent); background: color-mix(in srgb, var(--night) 55%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 999px; padding: 8px 13px; cursor: pointer; font: 500 10px/1 var(--f-text); letter-spacing: .22em; text-transform: uppercase; transition: background .3s, color .3s; }
+.pill:hover { background: var(--marble); color: var(--ink); }
+
+/* ---------- dialogue */
+.dlg { position: fixed; z-index: 25; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 12px); width: min(780px, calc(100% - 28px)); opacity: 0; pointer-events: none;
+  background: color-mix(in srgb, var(--marble) 92%, transparent); color: var(--ink); border-radius: 4px; padding: 20px 24px 16px; box-shadow: 0 30px 80px -30px #000; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  transition: opacity .45s var(--ease), transform .45s var(--ease); cursor: pointer; }
+.dlg.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.dlg .who { font: 500 12px/1.2 var(--f-display); letter-spacing: .22em; color: var(--bronze-ink); margin: 0 0 8px; }
+.dlg .line { font: italic 400 clamp(19px, 2.1vw, 24px)/1.42 var(--f-tale); margin: 0; min-height: 2.84em; text-wrap: pretty; }
+.dlg .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; }
+.dlg .next { font: 500 10px/1 var(--f-text); letter-spacing: .24em; text-transform: uppercase; color: var(--ink-2); }
+.dlg .next::after { content: " ▸"; animation: nudge 1.4s ease-in-out infinite; display: inline-block; }
+@keyframes nudge { 50% { transform: translateX(4px); } }
+.dlg form { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.dlg form[hidden] { display: none; }
+.dlg input { flex: 1 1 200px; min-width: 0; border: 0; border-bottom: 1px solid var(--ink); background: transparent; padding: 8px 0; font: 400 19px/1.3 var(--f-text); color: var(--ink); border-radius: 0; }
+.dlg input:focus { outline: none; border-color: var(--bronze-ink); }
+.btn { border: 1px solid var(--ink); background: var(--ink); color: var(--marble); border-radius: 999px; padding: 11px 18px; cursor: pointer; font: 500 10px/1 var(--f-text); letter-spacing: .22em; text-transform: uppercase; white-space: nowrap; transition: background .25s, color .25s, transform .15s; user-select: none; -webkit-user-select: none; }
+.btn:hover { background: transparent; color: var(--ink); }
+.btn:active { transform: scale(.97); }
+.btn.light { border-color: var(--marble); background: var(--marble); color: var(--ink); }
+.btn.light:hover { background: transparent; color: var(--marble); }
+.btn.line { background: transparent; color: var(--marble); border-color: color-mix(in srgb, var(--marble) 50%, transparent); }
+.btn.line:hover { background: var(--marble); color: var(--ink); }
+.btn[disabled] { opacity: .4; pointer-events: none; }
+
+/* ---------- task bar (during trials) */
+.task { position: fixed; z-index: 24; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 12px); width: min(860px, calc(100% - 28px)); opacity: 0; pointer-events: none;
+  display: flex; align-items: center; gap: 14px 18px; flex-wrap: wrap; justify-content: space-between; padding: 12px 14px 12px 20px; border-radius: 999px;
+  background: color-mix(in srgb, var(--night) 72%, transparent); border: 1px solid color-mix(in srgb, var(--marble) 18%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: opacity .4s var(--ease), transform .4s var(--ease); }
+.task.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.task .t { font: italic 400 19px/1.3 var(--f-tale); color: var(--marble); flex: 1 1 260px; min-width: 0; }
+.task .t b { font: 500 10px/1.2 var(--f-text); letter-spacing: .24em; text-transform: uppercase; color: var(--bronze); font-style: normal; display: block; margin-bottom: 3px; }
+.task .ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.meter { width: 150px; height: 6px; border-radius: 6px; background: color-mix(in srgb, var(--marble) 18%, transparent); position: relative; overflow: hidden; }
+.meter i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--bronze); }
+.meter .band { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--glow) 30%, transparent); }
+.meter .needle { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--glow); }
+.readout { font: 400 18px/1 var(--f-display); letter-spacing: .05em; font-variant-numeric: tabular-nums; min-width: 4.2em; text-align: right; }
+@media (max-width: 640px) { .task { border-radius: 14px; } .meter { width: 110px; } }
+
+/* ---------- shared marks on the plate */
+.spot { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); width: 30px; height: 30px; border-radius: 50%; padding: 0; cursor: pointer; z-index: 3;
+  border: 1px solid color-mix(in srgb, var(--ink) 60%, transparent); background: color-mix(in srgb, var(--glow) 55%, transparent); transition: transform .3s var(--ease), background .3s, box-shadow .5s; }
+.spot::before { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: var(--ink); transition: inset .3s, background .3s; }
+.spot::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--ink); opacity: .5; animation: pulse 2.8s var(--ease) infinite; }
+.spot:hover { transform: translate(-50%, -50%) scale(1.15); }
+.spot.lit { background: var(--glow); border-color: var(--bronze-ink); box-shadow: 0 0 0 8px color-mix(in srgb, var(--glow) 55%, transparent), 0 0 70px 26px color-mix(in srgb, var(--glow) 85%, transparent); }
+.spot.lit::before { background: var(--bronze-ink); inset: 10px; }
+.spot.done::before { background: var(--bronze-ink); }
+@keyframes pulse { 0% { transform: scale(1); opacity: .5; } 70%, 100% { transform: scale(2.1); opacity: 0; } }
+.tag { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, calc(-100% - 22px)); white-space: nowrap; pointer-events: none; z-index: 4;
+  background: var(--ink); color: var(--marble); padding: 7px 11px 8px; border-radius: 3px; text-align: left; }
+.tag.below { transform: translate(-50%, 22px); }
+.tag b { display: block; font: 400 13px/1.2 var(--f-display); letter-spacing: .12em; }
+.tag small { display: block; font: 500 9px/1.3 var(--f-text); letter-spacing: .22em; text-transform: uppercase; opacity: .7; margin-top: 3px; }
+.tag.done { background: var(--bronze-ink); }
+
+/* map waypoints */
+.way { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 8px; border: 0; background: none; cursor: pointer; padding: 0; z-index: 3; }
+.way .ring { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--ink); background: color-mix(in srgb, var(--glow) 70%, transparent); display: grid; place-items: center; font: 500 11px/1 var(--f-display); color: var(--ink); position: relative; transition: transform .3s var(--ease), background .3s; }
+.way .ring::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--ink); animation: pulse 2.8s var(--ease) infinite; opacity: .5; }
+.way .lbl { background: var(--ink); color: var(--marble); border-radius: 3px; padding: 6px 10px 7px; white-space: nowrap; text-align: center; }
+.way .lbl b { display: block; font: 400 12px/1.2 var(--f-display); letter-spacing: .12em; }
+.way .lbl small { display: block; font: 500 9px/1.3 var(--f-text); letter-spacing: .22em; text-transform: uppercase; opacity: .7; margin-top: 2px; }
+.way:hover .ring { transform: scale(1.12); background: var(--glow); }
+.way.done .ring { background: var(--bronze-ink); color: var(--glow); border-color: var(--bronze-ink); }
+.way.done .ring::after { animation: none; opacity: 0; }
+.way.done .lbl { background: color-mix(in srgb, var(--ink) 70%, transparent); }
+@media (max-width: 640px) { .way .lbl small { display: none; } .way .lbl { padding: 4px 7px 5px; } .way .lbl b { font-size: 10px; } .way .ring { width: 28px; height: 28px; } }
+
+/* Core: the glass */
+.ins-layer { position: absolute; inset: 0; z-index: 2; -webkit-mask-image: radial-gradient(circle var(--lr, 90px) at var(--mx, 50%) var(--my, 40%), #000 82%, transparent 100%); mask-image: radial-gradient(circle var(--lr, 90px) at var(--mx, 50%) var(--my, 40%), #000 82%, transparent 100%); }
+.ins { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); border: 0; background: color-mix(in srgb, var(--glow) 55%, transparent); padding: 6px 9px; border-radius: 2px; cursor: pointer; text-align: center; color: var(--ink); }
+.ins b { display: block; font: 500 clamp(9px, 1vw, 13px)/1.2 var(--f-display); letter-spacing: .1em; }
+.ins small { display: block; font: italic 400 clamp(11px, 1.05vw, 15px)/1.25 var(--f-tale); max-width: 16em; }
+.ins.cited { background: var(--ink); color: var(--marble); }
+.ins.wrong { animation: shake .4s; }
+.glass { position: absolute; left: var(--mx, 50%); top: var(--my, 40%); width: calc(var(--lr, 90px) * 2); height: calc(var(--lr, 90px) * 2); transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; z-index: 3;
+  border: 2px solid var(--bronze-ink); box-shadow: 0 0 0 6px color-mix(in srgb, var(--glow) 35%, transparent), inset 0 0 40px color-mix(in srgb, var(--glow) 70%, transparent); }
+.glass::after { content: ""; position: absolute; width: 14px; height: 70%; left: 82%; top: 86%; background: var(--bronze-ink); border-radius: 7px; transform: rotate(-40deg); transform-origin: top; }
+@keyframes shake { 20%, 60% { transform: translate(-54%, -50%); } 40%, 80% { transform: translate(-46%, -50%); } }
+
+/* Portal: offerings, law, fan */
+.law { position: absolute; right: 3%; bottom: 6%; width: 22%; min-width: 150px; background: color-mix(in srgb, var(--marble) 92%, transparent); color: var(--ink); padding: 12px 14px; border-radius: 3px; z-index: 3; box-shadow: 0 16px 40px -20px #000; }
+.law b { font: 500 11px/1.2 var(--f-display); letter-spacing: .2em; display: block; margin-bottom: 6px; color: var(--bronze-ink); }
+.law ol { margin: 0; padding-left: 16px; font: italic 400 clamp(13px, 1.2vw, 16px)/1.35 var(--f-tale); }
+.poster { position: absolute; display: grid; align-content: space-between; padding: 8% 8% 9%; border-radius: 2px; box-shadow: 0 24px 50px -20px #000, 0 0 0 1px rgba(0,0,0,.08); overflow: hidden; }
+.poster .pt { font-size: var(--ps, 26px); line-height: 1; letter-spacing: .06em; white-space: nowrap; }
+.poster .ps { font-size: calc(var(--ps, 26px) * .34); letter-spacing: .2em; text-transform: uppercase; opacity: .75; font-family: var(--f-text); }
+.poster .rule { height: 2px; width: 40%; background: #85673e; }
+.offer { left: 50%; top: 52%; width: 17%; aspect-ratio: 4 / 5; transform: translate(-50%, -50%) scale(.6) rotate(-6deg); opacity: 0; transition: transform .7s var(--ease), opacity .5s, left .7s var(--ease), top .7s var(--ease); z-index: 3; }
+.offer.in { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); }
+.offer.pass { left: 82%; top: 70%; transform: translate(-50%, -50%) scale(.5) rotate(4deg); opacity: .0; }
+.offer.fail { left: 20%; top: 92%; transform: translate(-50%, -50%) scale(.4) rotate(-14deg); opacity: 0; }
+.verdict { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); z-index: 4; background: var(--ink); color: var(--marble); padding: 8px 14px; border-radius: 3px; font: italic 400 17px/1.3 var(--f-tale); max-width: 60%; text-align: center; opacity: 0; transition: opacity .3s; }
+.verdict.on { opacity: 1; }
+.fancard { position: absolute; left: 43%; top: 64%; transform-origin: 0% 50%; z-index: 3; transition: transform .08s linear; }
+.fancard .poster { position: relative; width: 100%; height: 100%; }
+.fancard .fmt { position: absolute; right: 6px; bottom: 6px; font: 600 9px/1 var(--f-text); letter-spacing: .14em; background: rgba(0,0,0,.65); color: #fff; padding: 4px 6px; border-radius: 2px; }
+
+/* Zoetrope */
+.shotnum { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--marble); display: grid; place-items: center; font: 500 14px/1 var(--f-display); z-index: 4; pointer-events: none; animation: pop .4s var(--ease); }
+@keyframes pop { from { transform: translate(-50%, -50%) scale(.3); } }
+.ringspin, .ringstill { position: absolute; inset: 0; background: url(assets/ring.webp) 0 0 / 100% 100% no-repeat; }
+.ringspin { transform-origin: 50.15% 48.4%; clip-path: circle(27% at 50.15% 48.4%); will-change: transform, filter; z-index: 2; }
+.ringstill { clip-path: circle(7.2% at 49% 50.2%); z-index: 3; }
+.screen { position: absolute; left: 6%; top: 12%; width: 42%; aspect-ratio: 3 / 2; z-index: 3; background: var(--ink); overflow: hidden; border-radius: 2px; box-shadow: 0 0 120px 30px color-mix(in srgb, var(--glow) 60%, transparent); opacity: 0; transition: opacity 1s; }
+.screen.on { opacity: 1; }
+.screen .shot { position: absolute; inset: 0; background: url(assets/pilgrim.webp) no-repeat; background-size: 433% 433%; opacity: 0; transition: opacity .7s; filter: contrast(1.1) brightness(1.02); }
+.screen .shot.on { opacity: 1; animation: push 2.4s linear both; }
+@keyframes push { from { transform: scale(1); } to { transform: scale(1.12); } }
+.screen .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 14px; font: 400 clamp(11px, 1.2vw, 15px)/1.2 var(--f-display); letter-spacing: .16em; color: var(--marble); background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+.rays { position: absolute; left: 46%; top: 11%; width: 30%; height: 44%; z-index: 2; pointer-events: none; background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--glow) 55%, transparent) 70%, transparent 100%); clip-path: polygon(100% 0%, 100% 6%, 0% 100%, 0% 0%); opacity: 0; transition: opacity 1s; mix-blend-mode: soft-light; }
+.rays.on { opacity: 1; }
+
+/* Apps */
+.socket { position: absolute; left: var(--x); top: var(--y); width: 11%; height: 2.6%; transform: translate(-50%, -50%) rotate(var(--r)); border: 2px dashed var(--bronze-ink); border-radius: 10px; z-index: 2; cursor: pointer; background: color-mix(in srgb, var(--glow) 50%, transparent); animation: breathe 2s ease-in-out infinite; }
+.socket.filled { border-style: solid; background: var(--marble); animation: none; box-shadow: inset 0 -3px 0 var(--marble-2), 0 4px 10px -4px #000; }
+@keyframes breathe { 50% { box-shadow: 0 0 22px 4px color-mix(in srgb, var(--glow) 80%, transparent); } }
+.part, .token { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%) rotate(var(--r, 0deg)); z-index: 5; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.part { width: 11%; height: 2.6%; border-radius: 10px; background: linear-gradient(var(--marble), var(--marble-2)); box-shadow: 0 6px 12px -4px #000, inset 0 1px 0 #fff; }
+.part:active, .token:active { cursor: grabbing; }
+.part.sel, .token.sel, .tablet.sel { outline: 2px solid var(--bronze); outline-offset: 4px; }
+.token { background: var(--ink); color: var(--marble); border-radius: 3px; padding: 9px 13px; font: 400 13px/1.2 var(--f-display); letter-spacing: .12em; white-space: nowrap; box-shadow: 0 10px 24px -10px #000; }
+.dropzone { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); width: 20%; height: 8%; border: 2px dashed var(--bronze-ink); border-radius: 4px; z-index: 2; display: grid; place-items: center; font: 500 9px/1.2 var(--f-text); letter-spacing: .2em; text-transform: uppercase; color: var(--bronze-ink); background: color-mix(in srgb, var(--glow) 55%, transparent); animation: breathe 2s ease-in-out infinite; cursor: pointer; }
+.plaque { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); z-index: 3; background: var(--marble); color: var(--ink); border: 1px solid var(--marble-2); padding: 5px 9px; border-radius: 2px; font: 400 clamp(9px, 1vw, 12px)/1.2 var(--f-display); letter-spacing: .1em; white-space: nowrap; box-shadow: 0 6px 14px -8px #000; text-align: center; }
+.plaque small { display: block; font: italic 400 clamp(10px, 1vw, 13px)/1.2 var(--f-tale); letter-spacing: 0; color: var(--ink-2); }
+.plaque.mine { background: var(--ink); color: var(--marble); border-color: var(--ink); }
+.plaque.mine small { color: var(--marble-2); }
+
+/* Deck */
+.slot { position: absolute; left: var(--x); top: var(--y); width: 13%; aspect-ratio: 3 / 2; transform: translate(-50%, -50%); border: 1.5px dashed var(--bronze-ink); border-radius: 3px; z-index: 2; background: color-mix(in srgb, var(--glow) 40%, transparent); cursor: pointer; }
+.slot::before { content: attr(data-n); position: absolute; left: -26px; top: 50%; transform: translateY(-50%); font: 500 14px/1 var(--f-display); color: var(--bronze-ink); }
+.tablet { position: absolute; left: var(--x); top: var(--y); width: 13%; aspect-ratio: 3 / 2; transform: translate(-50%, -50%) rotate(var(--r, 0deg)); z-index: 5; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  background: var(--marble); color: var(--ink); border-radius: 3px; padding: 6% 7%; display: grid; align-content: space-between; box-shadow: 0 12px 24px -12px #000, inset 0 1px 0 #fff; transition: transform .3s var(--ease); overflow: hidden; min-height: 0; }
+.tablet.placed { transform: translate(-50%, -50%); }
+.tablet b { font: 500 clamp(9px, 1.05vw, 13px)/1.15 var(--f-display); letter-spacing: .1em; }
+.tablet span { font: italic 400 clamp(9px, .95vw, 13px)/1.15 var(--f-tale); color: var(--ink-2); display: none; }
+.tablet.wrong { box-shadow: 0 0 0 2px #9b3b2b, 0 12px 24px -12px #000; }
+.tablet.written span { display: block; }
+.tablet.written { background: var(--glow); }
+
+/* Type */
+.gust { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; touch-action: none; cursor: crosshair; }
+.gust .trail { fill: none; stroke: var(--bronze-ink); stroke-width: 3; stroke-dasharray: 2 10; stroke-linecap: round; }
+.gust text { font-family: var(--f-display); font-size: 46px; letter-spacing: 10px; fill: var(--ink); fill-opacity: .85; }
+
+/* Finale */
+.title { position: fixed; inset: 0; z-index: 26; display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity 1.4s; }
+.title.on { opacity: 1; }
+.title h1 { margin: 0; font: 400 clamp(56px, 13vw, 200px)/1 var(--f-display); letter-spacing: .34em; margin-right: -.34em; color: var(--glow); text-shadow: 0 0 60px var(--night), 0 0 120px var(--night); animation: open 3s var(--ease) both; }
+@keyframes open { from { letter-spacing: .02em; filter: blur(8px); } to { letter-spacing: .34em; filter: none; } }
+
+/* ---------- codex drawer */
+.codex { position: fixed; z-index: 35; top: 0; right: 0; bottom: 0; width: min(440px, 100%); background: var(--marble); color: var(--ink); transform: translateX(105%); transition: transform .6s var(--ease); overflow-y: auto; box-shadow: -30px 0 80px -30px #000;
+  padding: calc(26px + env(safe-area-inset-top, 0px)) max(26px, env(safe-area-inset-right, 0px)) calc(30px + env(safe-area-inset-bottom, 0px)) 28px; }
+.codex.on { transform: none; }
+.codex h2 { font: 400 28px/1.1 var(--f-display); letter-spacing: .14em; margin: 6px 0 4px; }
+.codex .eyebrow { font: 500 10px/1.3 var(--f-text); letter-spacing: .26em; text-transform: uppercase; color: var(--ink-2); margin: 0; }
+.codex .intro { font: italic 400 19px/1.4 var(--f-tale); margin: 10px 0 18px; }
+.codex ol { list-style: none; margin: 0; padding: 0; }
+.codex li { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 2px 12px; padding: 16px 0; border-top: 1px solid var(--marble-2); }
+.codex li .n { font: 400 20px/1 var(--f-display); color: var(--marble-2); grid-row: span 3; }
+.codex li.awake .n { color: var(--bronze-ink); }
+.codex li b { font: 500 15px/1.3 var(--f-text); }
+.codex li i { font: italic 400 17px/1.3 var(--f-tale); color: var(--ink-2); }
+.codex li p { margin: 4px 0 0; font-size: 14px; line-height: 1.55; }
+.codex .x { position: absolute; top: calc(18px + env(safe-area-inset-top, 0px)); right: max(18px, env(safe-area-inset-right, 0px)); border: 1px solid var(--ink); background: none; border-radius: 999px; padding: 8px 12px; cursor: pointer; font: 500 10px/1 var(--f-text); letter-spacing: .2em; text-transform: uppercase; }
+.codex .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+.codex .btn.ghost { background: transparent; color: var(--ink); }
+.codex .btn.ghost:hover { background: var(--ink); color: var(--marble); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+
+<div id="stage">
+  <div id="box" class="snap">
+    <img id="plate" alt="" src="assets/watcher.webp">
+    <span class="lamp"></span>
+    <div id="fx"></div>
+  </div>
+</div>
+<div id="veil"></div>
+
+<header class="hud">
+  <span class="mark">CYLOS</span>
+  <span class="chapter" id="chapter">The Trials of CYLOS</span>
+  <div class="hud-r">
+    <svg class="heads" id="heads" viewBox="0 0 54 34" aria-label="Heads awake: 0 of 6"></svg>
+    <button class="pill" id="to-map" type="button" hidden>Map</button>
+    <button class="pill" id="open-codex" type="button">Codex</button>
+  </div>
+</header>
+
+<div class="dlg" id="dlg" role="dialog" aria-live="polite">
+  <p class="who" id="who"></p>
+  <p class="line" id="line"></p>
+  <form id="ask" hidden><input id="ask-in" autocomplete="off" maxlength="24" aria-label="Your answer"><button class="btn" type="submit">Speak</button></form>
+  <div class="foot"><span></span><span class="next" id="next">Continue</span></div>
+</div>
+
+<div class="task" id="task"><div class="t" id="task-t"></div><div class="ctl" id="task-c"></div></div>
+<div class="title" id="title"><h1>CYLOS</h1></div>
+
+<aside class="codex" id="codex" aria-label="Codex">
+  <button class="x" id="close-codex" type="button">Close</button>
+  <p class="eyebrow">The Codex</p>
+  <h2>CYLOS</h2>
+  <p class="intro">What the myth means in plain words. Each head is one tool in the CYLNDR generative suite.</p>
+  <ol id="codex-list"></ol>
+  <div class="row"><button class="btn" id="codex-resume" type="button">Return to the trials</button><button class="btn ghost" id="restart" type="button">Begin again</button></div>
+</aside>
+
+<noscript><p style="position:fixed;inset:auto 0 40px;text-align:center;color:#e7e5e0">The Trials of CYLOS need JavaScript to play.</p></noscript>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const stage = $("#stage"), box = $("#box"), plate = $("#plate"), fx = $("#fx"), veil = $("#veil");
+
+  /* ------------------------------------------------------------ data */
+  const IMG = ["watcher", "twofold", "eagle", "lookout", "tortoise", "instruments", "serpent", "peacock", "pilgrim", "ring", "seer", "mantis", "workshop", "shelf", "geometer", "messenger", "wind", "hare", "psyche"];
+  const ALT = {
+    watcher: "A bearded figure seated on a cliff above the sea", twofold: "A creature split down the middle, half wolf and half deer", eagle: "An eagle with seven heads, six figures watching below",
+    lookout: "A hare with leaf ears on a cliff, looking over hills, a sea and an island", tortoise: "A great tortoise whose shell is carved with a circuit tree", instruments: "A magnifying glass, a relief map, a brush and a tag on a marble ground",
+    serpent: "A serpent with three heads: weeping, serene and roaring", peacock: "A man with a lion's body and a peacock's fanned tail", pilgrim: "A pilgrim speaking into a brazier whose smoke forms scenes",
+    ring: "A ring of twelve runners around a still robed figure", seer: "An elder with open arms, rays carved from his eyes", mantis: "A mantis figure with veined wings over carved geometry",
+    workshop: "A shelf with a lattice of rods and spheres and a carved flask", shelf: "A draped shelf with a quill, a small loom and a round mirror", geometer: "A faceless figure with a rod against golden spirals",
+    messenger: "A striding woman carrying a tablet, a coil of rope and a lantern", wind: "A flying wind god inside sweeping gusts", hare: "A hare leaping, its body turning into water, a flame and a bird beyond", psyche: "A youth with butterfly wings and a laurel crown",
+  };
+  IMG.forEach((k) => { const i = new Image(); i.src = `assets/${k}.webp`; });
+
+  const TOOLS = [
+    { k: "core", n: "I", beast: "The Tortoise", tool: "Core", desc: "AI knowledge capture, search and chat. SOPs, debriefs and talent history, answerable in plain language and cited back to the source.", way: [13, 68], head: [33, 15] },
+    { k: "portal", n: "II", beast: "The Serpent", tool: "Production Portal", desc: "Brand-governed production. Take a brief through Generate → QualityGate → Review, with a resizing room for every format.", way: [88, 74], head: [49.2, 6.4] },
+    { k: "zoetrope", n: "III", beast: "The Ring", tool: "Zoetrope", desc: "Agent-orchestrated video production. Go from prompt to finished cut through director-driven pipelines.", way: [71, 63], head: [65.3, 14.4] },
+    { k: "apps", n: "IV", beast: "The Mantis", tool: "Apps", desc: "Tools people here built to solve a problem in their own work, then shared because they turned out to be useful to everyone else.", way: [67, 83], head: [62.2, 24.8] },
+    { k: "deck", n: "V", beast: "The Geometer", tool: "Deck Designer", desc: "Write a brief; Claude picks slides from a template, orders them and writes the copy.", way: [87, 47], head: [51, 47.5] },
+    { k: "type", n: "VI", beast: "The Wind", tool: "Type Tool", desc: "Animated text and motion graphics, composed in-browser and sent to AI video models.", way: [11, 41], head: [36.1, 24.8] },
+  ];
+  const SEVENTH = [49.5, 27.8];
+
+  const FRESH = () => ({ name: "", done: {}, cites: 0, judged: 0, shots: [], tool: "", deckTries: 0, word: "" });
+  let S = FRESH();
+  try { const s = JSON.parse(localStorage.getItem("cylos-trials") || "null"); if (s && s.done) S = Object.assign(FRESH(), s); } catch (e) {}
+  const save = () => { try { localStorage.setItem("cylos-trials", JSON.stringify(S)); } catch (e) {} };
+  const awake = () => TOOLS.filter((t) => S.done[t.k]).length;
+
+  /* ------------------------------------------------------------ HUD eagle + codex */
+  const headsSvg = $("#heads");
+  const drawHeads = (seventh = false) => {
+    const pts = [...TOOLS.map((t) => t.head), SEVENTH];
+    headsSvg.innerHTML = pts.map(([x, y], i) => `<circle cx="${(4 + (x - 30) * 1.25).toFixed(1)}" cy="${(4 + y * .55).toFixed(1)}" r="3.2" class="${i === 6 ? "seventh" : ""} ${(i < 6 && S.done[TOOLS[i].k]) || (i === 6 && seventh) ? "lit" : ""}"/>`).join("");
+    headsSvg.setAttribute("aria-label", `Heads awake: ${awake()} of 6`);
+  };
+  const codex = $("#codex");
+  const drawCodex = () => {
+    $("#codex-list").innerHTML = TOOLS.map((t) => `<li class="${S.done[t.k] ? "awake" : ""}"><span class="n">${t.n}</span><b>${t.tool}</b><i>${t.beast}${S.done[t.k] ? " · awake" : " · still dark"}</i><p>${t.desc}</p></li>`).join("");
+  };
+  $("#open-codex").onclick = () => { drawCodex(); codex.classList.add("on"); };
+  $("#close-codex").onclick = $("#codex-resume").onclick = () => codex.classList.remove("on");
+  $("#restart").onclick = () => { S = FRESH(); save(); codex.classList.remove("on"); abortAll(); setTimeout(() => main(), 50); };
+
+  /* ------------------------------------------------------------ layout: cover for story, fit for trials */
+  let mode = "cover", focal = [.5, .5];
+  const AR = 1.5;
+  const layout = () => {
+    const W = stage.clientWidth, H = stage.clientHeight; let w, h, x, y;
+    const portrait = W / H < 1.1;
+    if (portrait) {
+      const top = 64, bot = mode === "fit" ? 150 : 250; w = W; h = W / AR;
+      const avail = H - top - bot; if (h > avail) { h = Math.max(avail, H * .36); w = h * AR; }
+      x = (W - w) / 2; y = top + Math.max(0, (H - top - bot - h) / 2);
+    } else if (mode === "cover") {
+      const s = Math.max(W / 1300, H / 866.7); w = 1300 * s; h = 866.7 * s; x = (W - w) * focal[0]; y = (H - h) * focal[1];
+    } else {
+      const top = 58, bot = 92; const s = Math.min(W / 1300, (H - top - bot) / 866.7); w = 1300 * s; h = 866.7 * s; x = (W - w) / 2; y = top + (H - top - bot - h) / 2;
+    }
+    Object.assign(box.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px" });
+    box.style.setProperty("--lr", Math.max(54, w * .085) + "px");
+    stage.classList.toggle("coverglow", mode === "cover" && !portrait);
+    stage.classList.toggle("fitmode", mode === "fit" || portrait);
+  };
+  const setMode = (m) => { if (m !== mode) { mode = m; layout(); } };
+  addEventListener("resize", () => { box.classList.add("snap"); layout(); requestAnimationFrame(() => box.classList.remove("snap")); });
+
+  /* lamp */
+  box.addEventListener("pointermove", (e) => { const r = box.getBoundingClientRect(); box.style.setProperty("--lx", ((e.clientX - r.left) / r.width * 100) + "%"); box.style.setProperty("--ly", ((e.clientY - r.top) / r.height * 100) + "%"); });
+  const cap = (n, e) => { try { n.setPointerCapture(e.pointerId); } catch (err) {} };
+  const toBox = (e) => { const r = box.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * 100, y: (e.clientY - r.top) / r.height * 100, px: e.clientX - r.left, py: e.clientY - r.top, w: r.width, h: r.height }; };
+
+  /* ------------------------------------------------------------ async plumbing: every wait can be aborted (Map button) */
+  const ABORT = "ABORT"; const pending = new Set();
+  addEventListener("unhandledrejection", (e) => { if (e.reason === ABORT) e.preventDefault(); }); let listeners = []; let timers = [];
+  const pend = (fn) => new Promise((res, rej) => { const h = { rej }; pending.add(h); fn((v) => { pending.delete(h); res(v); }); });
+  const on = (el, ev, f, o) => { el.addEventListener(ev, f, o); listeners.push([el, ev, f, o]); };
+  const later = (f, ms) => { const id = setTimeout(f, ms); timers.push(id); return id; };
+  const wait = (ms) => pend((ok) => later(ok, reduce ? Math.min(ms, 60) : ms));
+  const clearScene = () => { listeners.forEach(([el, ev, f, o]) => el.removeEventListener(ev, f, o)); listeners = []; timers.forEach(clearTimeout); timers = []; fx.innerHTML = ""; hideTask(); hideDlg(); $("#title").classList.remove("on"); };
+  const abortAll = () => { const p = [...pending]; pending.clear(); p.forEach((h) => h.rej(ABORT)); clearScene(); };
+
+  /* scenes */
+  const show = async (key, f = [.5, .5], chap) => {
+    veil.classList.remove("off"); await wait(520);
+    clearScene(); focal = f; mode = "cover";
+    plate.src = `assets/${key}.webp`; plate.alt = ALT[key] || "";
+    plate.style.animation = "none"; void plate.offsetWidth; plate.style.animation = "";
+    box.classList.add("snap"); layout(); void box.offsetWidth; box.classList.remove("snap");
+    if (chap) $("#chapter").textContent = chap;
+    veil.classList.add("off"); await wait(380);
+  };
+
+  /* dialogue */
+  const dlg = $("#dlg"), who = $("#who"), line = $("#line"), askF = $("#ask"), askIn = $("#ask-in"), next = $("#next");
+  let typing = null;
+  const hideDlg = () => { dlg.classList.remove("on"); askF.hidden = true; };
+  const typeOut = (txt) => new Promise((res) => {
+    if (reduce) { line.textContent = txt; typing = null; return res(); }
+    let i = 0, stop = false; line.textContent = "";
+    typing = { finish: () => { stop = true; line.textContent = txt; typing = null; res(); } };
+    const step = () => { if (stop) return; i += 2; line.textContent = txt.slice(0, i); if (i < txt.length) later(step, 17); else { stop = true; typing = null; res(); } };
+    step();
+  });
+  const say = (speaker, txt, opts = {}) => pend(async (ok) => {
+    setMode("cover"); hideTask();
+    who.textContent = speaker; askF.hidden = true; next.hidden = false; dlg.classList.add("on");
+    let done = false; const full = txt.replace(/\{name\}/g, S.name || "maker");
+    const finish = () => { if (typing && typing.finish) typing.finish(); done = true; };
+    typeOut(full).then(() => { done = true; });
+    const adv = (e) => {
+      if (e.type === "keydown" && !(e.key === "Enter" || e.key === " " || e.key === "ArrowRight")) return;
+      if (e.type === "keydown") e.preventDefault();
+      if (!done) { finish(); return; }
+      dlg.removeEventListener("click", adv); removeEventListener("keydown", adv); ok();
+    };
+    later(() => { dlg.addEventListener("click", adv); addEventListener("keydown", adv); listeners.push([dlg, "click", adv], [window, "keydown", adv]); }, 60);
+  });
+  const ask = (speaker, txt, def) => pend(async (ok) => {
+    setMode("cover"); hideTask();
+    who.textContent = speaker; next.hidden = true; dlg.classList.add("on");
+    await typeOut(txt.replace(/\{name\}/g, S.name || "maker"));
+    askF.hidden = false; askIn.value = def || ""; askIn.focus({ preventScroll: true }); askIn.select();
+    const sub = (e) => { e.preventDefault(); const v = askIn.value.trim() || def; askF.removeEventListener("submit", sub); askF.hidden = true; ok(v); };
+    on(askF, "submit", sub);
+  });
+
+  /* task bar */
+  const task = $("#task"), taskT = $("#task-t"), taskC = $("#task-c");
+  const setTask = (title, txt, ctl = "") => { setMode("fit"); hideDlg(); taskT.innerHTML = `<b>${title}</b>${txt}`; taskC.innerHTML = ctl; task.classList.add("on"); };
+  const taskText = (txt) => { const b = taskT.querySelector("b"); taskT.innerHTML = (b ? b.outerHTML : "") + txt; };
+  const hideTask = () => task.classList.remove("on");
+
+  /* helpers for plate marks */
+  const el = (tag, cls, html, vars) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; if (vars) for (const [k, v] of Object.entries(vars)) n.style.setProperty(k, v); fx.append(n); return n; };
+  const pos = (n, x, y) => { n.style.setProperty("--x", x + "%"); n.style.setProperty("--y", y + "%"); };
+
+  /* drag (with tap-to-select fallback). targets: [{el, x, y, accept(item)}] */
+  let selected = null;
+  const draggable = (n, { onDrop, onTap }) => {
+    let st = null;
+    on(n, "pointerdown", (e) => { e.preventDefault(); cap(n, e); const p = toBox(e); st = { sx: p.px, sy: p.py, ox: parseFloat(n.style.getPropertyValue("--x")), oy: parseFloat(n.style.getPropertyValue("--y")), moved: false }; n.style.zIndex = 9; });
+    on(n, "pointermove", (e) => { if (!st) return; const p = toBox(e); const dx = p.px - st.sx, dy = p.py - st.sy; if (Math.hypot(dx, dy) > 6) st.moved = true; if (st.moved) pos(n, st.ox + dx / p.w * 100, st.oy + dy / p.h * 100); });
+    on(n, "pointerup", (e) => {
+      if (!st) return; const s = st; st = null; n.style.zIndex = "";
+      if (!s.moved) { if (selected && selected !== n) selected.classList.remove("sel"); selected = n.classList.toggle("sel") ? n : null; onTap && onTap(n); return; }
+      const p = toBox(e); if (!onDrop(n, p.x, p.y)) pos(n, s.ox, s.oy);
+    });
+  };
+
+  /* ------------------------------------------------------------ the story */
+  const main = async () => {
+    try {
+      drawHeads();
+      if (awake() > 0 && S.name) { await show("watcher", [.25, .5], "The cliff"); await say("The Watcher", `You came back, {name}. ${awake()} of six heads are awake. The hare will show you the road.`); return map(); }
+      await intro();
+      return map();
+    } catch (e) { if (e !== ABORT) throw e; }
+  };
+
+  const intro = async () => {
+    await show("watcher", [.22, .5], "The cliff");
+    await say("The Watcher", "Another maker climbs my cliff. I have sat here a long time, counting what the makers lose.");
+    S.name = await ask("The Watcher", "Before I tell you anything: what do they call you?", "Maker"); save();
+    await say("The Watcher", "Listen then, {name}. Before CYLOS, every maker was split in two.");
+    await show("twofold", [.4, .45], "The split maker");
+    await say("The Watcher", "Half of every maker hunted for things already found. The other half was hunted: by deadlines, by blank pages, by work done twice.");
+    await say("The Watcher", "So I carved a creature to carry what one maker could not.");
+    await show("eagle", [.5, .3], "The creature");
+    for (const t of TOOLS) { const s = el("button", "spot", "", null); pos(s, t.head[0], t.head[1]); s.tabIndex = -1; }
+    await say("The Watcher", "Seven heads, one body. Six of the heads have gone dark. Each is held by a creature somewhere in the land.");
+    await say("The Watcher", "Wake all six and the seventh will open. Its name is CYLOS.");
+  };
+
+  /* ------------------------------------------------------------ the map */
+  const map = async () => {
+    $("#to-map").hidden = true;
+    await show("lookout", [.5, .62], "The land");
+    if (!S.seenMap) { S.seenMap = true; save(); await say("The Hare", "I keep watch over the land. Six creatures hold six heads. Choose any road; they do not need to be walked in order."); }
+    setMode("fit");
+    for (const t of TOOLS) {
+      const b = el("button", "way" + (S.done[t.k] ? " done" : ""), `<span class="ring">${S.done[t.k] ? "✓" : t.n}</span><span class="lbl"><b>${t.n} · ${t.beast}</b><small>${S.done[t.k] ? "Awake" : t.tool}</small></span>`);
+      pos(b, t.way[0], t.way[1]); b.type = "button";
+      on(b, "click", () => trial(t.k));
+    }
+    const n = awake();
+    if (n === 6) { setTask("All six heads are awake", "Return to the Watcher and open the seventh.", `<button class="btn light" id="go-final" type="button">Open the seventh</button>`); on($("#go-final"), "click", () => finale()); }
+    else setTask(`${n} of 6 heads awake`, n ? "Choose your next road." : "Choose a road. Each creature holds one head.", "");
+  };
+  $("#to-map").onclick = () => { abortAll(); map().catch((e) => { if (e !== ABORT) throw e; }); };
+
+  const trial = async (k) => {
+    abortAll(); $("#to-map").hidden = false;
+    try {
+      await ({ core, portal, zoetrope, apps, deck, type })[k]();
+      S.done[k] = true; save(); drawHeads();
+      const t = TOOLS.find((x) => x.k === k);
+      await show("eagle", [.5, .3], "The creature");
+      const s = el("button", "spot lit", ""); pos(s, t.head[0], t.head[1]);
+      for (const o of TOOLS) if (S.done[o.k] && o.k !== k) { const d = el("button", "spot done", ""); pos(d, o.head[0], o.head[1]); }
+      const tg = el("div", "tag" + (t.head[1] > 40 ? " below" : ""), `<b>${t.n} · ${t.beast} wakes</b><small>${t.tool}</small>`); pos(tg, t.head[0], t.head[1]);
+      await say("The Watcher", awake() === 6 ? "The sixth head opens its eyes. All of them are awake now, {name}. Come back to the cliff." : `A head opens its eyes. ${awake()} of six are awake.`);
+      await map();
+    } catch (e) { if (e !== ABORT) throw e; }
+  };
+
+  /* ============================================================ I · CORE — the tortoise and the glass */
+  const core = async () => {
+    await show("tortoise", [.5, .35], "I · The Tortoise");
+    await say("The Tortoise", "Slow down, {name}. I am the oldest thing in CYLOS. Everything the makers ever learned is carved into my shell.");
+    await say("The Tortoise", "A producer came to me this morning and asked: how do we deliver to a broadcaster? The answer is carved on my shell. In two places.");
+    await show("instruments", [.5, .5], "I · The Tortoise");
+    await say("The Tortoise", "Take the glass from the table. Carvings this old only show under it.");
+    await show("tortoise", [.5, .35], "I · The Tortoise");
+    const layer = el("div", "ins-layer"); const glass = el("div", "glass");
+    const INS = [
+      { t: "Delivery SOP", s: "Masters with stems, captions and a clock slate", x: 30, y: 26, ok: true },
+      { t: "Talent history", s: "Both leads marked: rebook", x: 47, y: 15, ok: false },
+      { t: "Debrief · broadcast spot", s: "Log the handover the same day", x: 66, y: 25, ok: true },
+      { t: "Grading notes", s: "Lock the edit before colour", x: 38, y: 43, ok: false },
+      { t: "Rate card", s: "Day rates, last revised in spring", x: 58, y: 41, ok: false },
+      { t: "Kit list", s: "Two bodies, four primes, one slider", x: 74, y: 40, ok: false },
+    ];
+    let cites = 0, misses = 0;
+    await pend((ok) => {
+      setTask("Search the shell", "Move the glass over the shell. Cite the two carvings that answer the question. <span id='c-n'>0</span> of 2 cited.");
+      INS.forEach((d) => {
+        const b = document.createElement("button"); b.className = "ins"; b.type = "button"; b.innerHTML = `<b>${d.t}</b><small>${d.s}</small>`; pos(b, d.x, d.y); layer.append(b);
+        b.onclick = (e) => {
+          const p = toBox(e), r = parseFloat(getComputedStyle(box).getPropertyValue("--lr"));
+          const cx = parseFloat(box.style.getPropertyValue("--mx")) || 0, cy = parseFloat(box.style.getPropertyValue("--my")) || 0;
+          if (Math.hypot(p.px - cx, p.py - cy) > r * 1.05 && e.pointerType !== "touch" && e.detail !== 0) return;
+          if (b.classList.contains("cited")) return;
+          if (d.ok) { b.classList.add("cited"); cites++; $("#c-n").textContent = cites; if (cites === 2) { S.cites = 2; later(ok, 700); } }
+          else { misses++; b.classList.remove("wrong"); void b.offsetWidth; b.classList.add("wrong"); taskText(`“${d.t}” is carved there, but it does not answer the producer. <span id='c-n'>${cites}</span> of 2 cited.`); }
+        };
+      });
+      const move = (e) => { const p = toBox(e); box.style.setProperty("--mx", p.px + "px"); box.style.setProperty("--my", p.py + "px"); };
+      on(box, "pointermove", move); on(box, "pointerdown", move);
+      later(() => { const r = box.getBoundingClientRect(); box.style.setProperty("--mx", r.width * .3 + "px"); box.style.setProperty("--my", r.height * .3 + "px"); }, 950);
+    });
+    await say("The Tortoise", "Masters with stems, captions and a clock slate [1], and log the handover the same day [2]. Two carvings, one answer.");
+    await say("The Tortoise", misses ? "You read a few wrong carvings first. Everyone does. That is why I always show where my answers were carved." : "You went straight to them. And I will always show you where my answers were carved, so you never have to trust me blindly.");
+  };
+
+  /* ============================================================ II · PRODUCTION PORTAL — three minds, then the peacock */
+  const OFFERS = [
+    { bg: "#e4e2dd", fg: "#1d1c1a", font: "Cinzel", ok: true, why: "Marble ground, ink capitals. Lawful." },
+    { bg: "#ff4fa3", fg: "#ffffff", font: "Hanken Grotesk", w: 700, ok: false, why: "A pink ground. No stone was ever that colour." },
+    { bg: "#e4e2dd", fg: "#85673e", font: "Cinzel", ok: true, why: "Bronze on marble. Lawful." },
+    { bg: "#101010", fg: "#39ff88", font: "Hanken Grotesk", w: 600, ok: false, why: "A night ground and a green no bronze has ever been." },
+    { bg: "#e4e2dd", fg: "#1d1c1a", font: "'Comic Sans MS','Chalkboard SE','Comic Neue',cursive", ok: false, why: "The right ground, but those letters were never cut in stone." },
+    { bg: "#e4e2dd", fg: "#1d1c1a", font: "Cinzel", rule: true, ok: true, why: "Ink capitals with a bronze rule. Lawful, and the finest." },
+  ];
+  const posterHTML = (o, ps) => `<span class="pt" style="font-family:${o.font};font-weight:${o.w || 400};--ps:${ps}">CYLOS</span>${o.rule ? '<span class="rule"></span>' : "<span></span>"}<span class="ps">Summer launch</span>`;
+  const portal = async () => {
+    await show("serpent", [.5, .25], "II · The Serpent");
+    const spots = [[16, 19], [47, 12], [75, 18]].map(([x, y]) => { const s = el("button", "spot", ""); pos(s, x, y); s.tabIndex = -1; return s; });
+    await say("The Serpent", "Three heads, one body, {name}. The first of us dreams. The second weighs. The third speaks.");
+    await say("The Serpent", "My first head will dream offerings for a summer launch. You will be my second head. Weigh each one against the house law.");
+    const law = el("div", "law", "<b>The house law</b><ol><li>A marble ground.</li><li>Ink or bronze, nothing else.</li><li>Capitals cut as if in stone.</li></ol>");
+    let right = 0;
+    await pend(async (ok) => {
+      setTask("Weigh the offerings", "The first head dreams. Pass what keeps the law; turn back what breaks it.", `<button class="btn line" id="o-no" type="button">Turn back</button><button class="btn light" id="o-yes" type="button">Pass</button>`);
+      const verdict = el("div", "verdict");
+      for (let i = 0; i < OFFERS.length; i++) {
+        const o = OFFERS[i];
+        spots.forEach((s, j) => s.classList.toggle("lit", j === 0));
+        const card = el("div", "poster offer"); card.style.background = o.bg; card.style.color = o.fg; card.innerHTML = posterHTML(o, "clamp(11px, 1.7vw, 24px)");
+        await wait(60); card.classList.add("in"); await wait(500);
+        spots.forEach((s, j) => s.classList.toggle("lit", j === 1));
+        taskText(`Offering ${i + 1} of ${OFFERS.length}. Does it keep the law?`);
+        const pass = await pend((res) => {
+          const y = $("#o-yes"), n = $("#o-no");
+          const f = (v) => () => { y.onclick = n.onclick = null; removeEventListener("keydown", kd); res(v); };
+          const kd = (e) => { if (e.key === "ArrowRight") f(true)(); if (e.key === "ArrowLeft") f(false)(); };
+          y.onclick = f(true); n.onclick = f(false); addEventListener("keydown", kd); listeners.push([window, "keydown", kd]);
+        });
+        const good = pass === o.ok; if (good) right++;
+        verdict.textContent = (good ? "" : "The second head disagrees. ") + o.why; verdict.classList.add("on");
+        card.classList.add(o.ok ? "pass" : "fail");
+        await wait(good ? 1300 : 2300); verdict.classList.remove("on"); card.remove();
+      }
+      S.judged = right; ok();
+    });
+    law.remove(); spots.forEach((s, j) => s.classList.toggle("lit", j === 2));
+    await say("The Serpent", right === 6 ? "You weighed all six true. My third head speaks: the last offering, with the bronze rule, is chosen." : `You weighed ${right} of six true. My second head caught the rest. My third head speaks: the last offering, with the bronze rule, is chosen.`);
+    await show("peacock", [.5, .5], "II · The Peacock");
+    await say("The Peacock", "I keep the resizing room. One chosen thing goes in; it comes out in every shape it will ever need.");
+    await say("The Peacock", "Open my tail, {name}.");
+    const chosen = OFFERS[5];
+    const FMT = [["16:9", 16 / 9, -46], ["4:5", 4 / 5, -27], ["1:1", 1, -9], ["9:16", 9 / 16, 10]];
+    const cards = FMT.map(([f, ar]) => { const c = el("div", "fancard", `<div class="poster" style="background:${chosen.bg};color:${chosen.fg}">${posterHTML(chosen, "clamp(7px,1vw,14px)")}</div><span class="fmt">${f}</span>`); const h = 19; c.style.height = h + "%"; c.style.width = (h * ar / AR) + "%"; return c; });
+    let p = 0, fanDone = false;
+    const paint = () => { const bw = box.clientWidth; cards.forEach((c, i) => { const a = -6 + (FMT[i][2] + 6) * p; c.style.transform = `translateY(-50%) rotate(${a}deg) translateX(${bw * (.015 + .12 * p)}px)`; }); };
+    paint();
+    await pend((ok) => {
+      setTask("Open the tail", "Drag across the tail to fan the chosen offering into every format.", `<input type="range" id="fan" min="0" max="100" value="0" aria-label="Open the tail" style="width:160px;accent-color:#b08a55">`);
+      const range = $("#fan"); let st = null;
+      const setP = (v) => { p = Math.max(0, Math.min(1, v)); range.value = p * 100; paint(); if (p >= .98 && !fanDone) { fanDone = true; taskText("Four shapes, one law."); later(ok, 1800); } };
+      on(range, "input", () => setP(range.value / 100));
+      on(box, "pointerdown", (e) => { st = { x: toBox(e).x, p }; cap(box, e); });
+      on(box, "pointermove", (e) => { if (st) setP(st.p + (toBox(e).x - st.x) / 35); });
+      on(box, "pointerup", () => { st = null; });
+    });
+    await say("The Peacock", "Sixteen by nine, four by five, square and tall. One law kept in every shape.");
+  };
+
+  /* ============================================================ III · ZOETROPE — smoke, ring, seer */
+  const SHOTS = [
+    { k: "ship", n: "The ship at dawn", x: 67.7, y: 12.5, c: [880, 110] },
+    { k: "lion", n: "The lion", x: 86, y: 27, c: [1130, 240] },
+    { k: "meet", n: "The meeting", x: 67, y: 38.5, c: [870, 335] },
+    { k: "rider", n: "The rider", x: 67, y: 58, c: [870, 500] },
+    { k: "dance", n: "The dance", x: 85, y: 56, c: [1110, 490] },
+  ];
+  const zoetrope = async () => {
+    await show("pilgrim", [.5, .5], "III · The Ring");
+    await say("The Pilgrim", "You walk the same road I did, {name}. I spoke a story into this brazier, and the smoke took the shape of scenes.");
+    await say("The Pilgrim", "A story is only scenes in an order. Choose the order. Touch the scenes in the smoke, first to last.");
+    const order = [];
+    await pend((ok) => {
+      setTask("Order the scenes", "Touch the five scenes in the smoke in the order you want them told. <span id='z-n'>0</span> of 5.");
+      SHOTS.forEach((s) => {
+        const b = el("button", "spot", ""); pos(b, s.x, s.y); b.type = "button"; b.setAttribute("aria-label", s.n);
+        on(b, "click", () => { if (order.includes(s)) return; order.push(s); b.remove(); const n = el("div", "shotnum", order.length); pos(n, s.x, s.y); $("#z-n").textContent = order.length; if (order.length === 5) later(ok, 700); });
+      });
+    });
+    S.shots = order.map((s) => s.n); save();
+    await say("The Pilgrim", `${order[0].n} first, ${order[4].n.toLowerCase()} last. Now take it to the ring.`);
+    await show("ring", [.5, .48], "III · The Ring");
+    await say("The Ring", "Twelve runners carry your scenes around me. Too slow and they are only statues. Too fast and they blur into smoke.");
+    await say("The Ring", "Spin me until they live, then hold them there. The figure in the middle never moves. She is the director.");
+    const spinL = el("div", "ringspin"); el("div", "ringstill");
+    await pend((ok) => {
+      setTask("Bring them to life", "Hold to spin. Keep the runners in the living band.", `<div class="meter" id="z-m"><span class="band" style="left:${10 / 40 * 100}%;width:${4 / 40 * 100}%"></span><span class="needle" id="z-nd" style="left:0"></span></div><span class="readout" id="z-r">0.0</span><button class="btn light" id="z-hold" type="button">Hold to spin</button>`);
+      const hold = $("#z-hold"), nd = $("#z-nd"), rd = $("#z-r");
+      let ang = 0, vel = 0, holding = false, drag = null, inBand = 0, last = performance.now(), live = true;
+      const tick = (t) => {
+        if (!live) return; const dt = Math.min(.05, (t - last) / 1000); last = t;
+        if (holding) vel = Math.min(vel + 260 * dt, 1200); else if (!drag) vel = Math.max(0, vel - (90 + vel * .5) * dt);
+        if (!drag) ang += vel * dt;
+        const f = vel / 360 * 12;
+        spinL.style.transform = `rotate(${ang}deg)`; spinL.style.filter = `blur(${Math.min(5, Math.max(0, (f - 6) / 4)).toFixed(2)}px)`;
+        nd.style.left = Math.min(100, f / 40 * 100) + "%"; rd.textContent = f.toFixed(1);
+        if (f >= 10 && f <= 14) { inBand += dt; taskText(`They live. Hold it… ${Math.max(0, 2.5 - inBand).toFixed(1)}s`); }
+        else { inBand = Math.max(0, inBand - dt * .5); taskText(f < 10 ? (f < 1 ? "Hold to spin. Keep the runners in the living band." : "Still statues. Faster.") : "Too fast. They blur into smoke. Let go a little."); }
+        if (inBand >= 2.5) { live = false; holding = false; later(ok, 400); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      const set = (v) => { holding = v; hold.textContent = v ? "Spinning…" : "Hold to spin"; };
+      on(hold, "pointerdown", (e) => { e.preventDefault(); cap(hold, e); set(true); });
+      ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => on(hold, ev, () => set(false)));
+      on(hold, "keydown", (e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); set(true); } });
+      on(hold, "keyup", (e) => { if (e.key === " " || e.key === "Enter") set(false); });
+      const angAt = (e) => { const p = toBox(e); return Math.atan2(p.py - p.h * .484, p.px - p.w * .5015) * 180 / Math.PI; };
+      on(box, "pointerdown", (e) => { cap(box, e); drag = { a: angAt(e), t: performance.now() }; });
+      on(box, "pointermove", (e) => { if (!drag) return; const a = angAt(e), now = performance.now(); let d = a - drag.a; if (d > 180) d -= 360; if (d < -180) d += 360; ang += d; vel = Math.max(0, vel * .7 + (Math.abs(d) / Math.max(.008, (now - drag.t) / 1000)) * .3); drag = { a, t: now }; });
+      on(box, "pointerup", () => { drag = null; });
+    });
+    await say("The Ring", "There. Twelve statues became one runner. That is all a film has ever been.");
+    await show("seer", [.75, .45], "III · The Seer");
+    await say("The Seer", "And I project what the runners carry. Watch, {name}. This is your cut.");
+    setMode("fit"); hideDlg();
+    const rays = el("div", "rays"); const scr = el("div", "screen");
+    const shots = order.map((s) => { const d = document.createElement("div"); d.className = "shot"; const L = s.c[0] - 150, T = s.c[1] - 100; d.style.backgroundPosition = `${Math.max(0, Math.min(100, L / 1000 * 100))}% ${Math.max(0, Math.min(100, T / 668 * 100))}%`; scr.append(d); return d; });
+    const cap = document.createElement("div"); cap.className = "cap"; scr.append(cap);
+    await wait(900); rays.classList.add("on"); scr.classList.add("on"); await wait(700);
+    for (let i = 0; i < shots.length; i++) { shots.forEach((d, j) => d.classList.toggle("on", j === i)); cap.textContent = `Shot ${i + 1} · ${order[i].n}`; await wait(2100); }
+    cap.textContent = "End of cut";
+    await wait(900);
+    await say("The Seer", "A prompt became scenes, the scenes became motion, and the motion became a cut. The director never once had to run.");
+  };
+
+  /* ============================================================ IV · APPS — the mantis, the workshop, the shelf */
+  const apps = async () => {
+    await show("mantis", [.5, .35], "IV · The Mantis");
+    await say("The Mantis", "I am the artificer, {name}. I keep the workshop, and I keep one rule.");
+    await say("The Mantis", "Every maker who passes through leaves one tool behind. Something they built for their own work that turned out useful to everyone.");
+    await show("workshop", [.4, .5], "IV · The Workshop");
+    await say("The Mantis", "Finish the lattice. Three parts are missing, and the loose rods are on the shelf.");
+    const SOCK = [[30, 29, "0deg"], [44.5, 33, "90deg"], [33, 58, "-28deg"]];
+    await pend((ok) => {
+      setTask("Build your tool", "Drag the three rods into the lattice. You can also tap a rod, then tap where it goes. <span id='a-n'>0</span> of 3.");
+      const socks = SOCK.map(([x, y, r]) => { const s = el("div", "socket", "", { "--r": r }); pos(s, x, y); return s; });
+      let filled = 0;
+      const place = (part, s) => { if (s.classList.contains("filled")) return false; s.classList.add("filled"); part.remove(); filled++; $("#a-n").textContent = filled; if (selected === part) selected = null; if (filled === 3) later(ok, 600); return true; };
+      [[12, 72, "-8deg"], [17, 78, "4deg"], [10, 84, "-3deg"]].forEach(([x, y, r]) => {
+        const part = el("div", "part", "", { "--r": r }); pos(part, x, y);
+        draggable(part, { onDrop: (n, px, py) => { const s = socks.find((s) => Math.hypot(parseFloat(s.style.getPropertyValue("--x")) - px, (parseFloat(s.style.getPropertyValue("--y")) - py) * 1.5) < 9); return s ? place(n, s) : false; } });
+      });
+      socks.forEach((s) => on(s, "click", () => { if (selected && selected.classList.contains("part")) place(selected, s); }));
+    });
+    S.tool = await ask("The Mantis", "It holds. Every tool on my shelf has a name. What is yours called?", `${S.name}'s shortcut`); save();
+    await show("shelf", [.5, .5], "IV · The Shelf");
+    await say("The Mantis", "This is the shelf. Look at what other makers left. Then put yours beside them.");
+    [["The quill", "A copy tidier that trims scripts to time", 18, 47], ["The loom", "A batch renamer for loose files", 45.5, 14], ["The mirror", "A resizer, one frame to every format", 80.5, 14]].forEach(([a, b, x, y]) => { const p = el("div", "plaque", `${a}<small>${b}</small>`); pos(p, x, y); });
+    await pend((ok) => {
+      setTask("Leave it on the shelf", "Drag your tool onto the shelf, or tap it and then tap the shelf.");
+      const zone = el("div", "dropzone", "Your place"); pos(zone, 62, 60);
+      const tok = el("div", "token", S.tool); pos(tok, 22, 85);
+      const put = () => { tok.remove(); zone.remove(); const p = el("div", "plaque mine", `${S.tool}<small>Left by ${S.name}</small>`); pos(p, 62, 60); later(ok, 900); return true; };
+      draggable(tok, { onDrop: (n, x, y) => (Math.abs(x - 62) < 14 && Math.abs(y - 60) < 10 ? put() : false) });
+      on(zone, "click", () => { if (selected === tok) put(); });
+    });
+    await say("The Mantis", `“${S.tool}”, left by {name}. The next maker who passes will find it already waiting. That is the whole of my rule.`);
+  };
+
+  /* ============================================================ V · DECK DESIGNER — the geometer, the messenger */
+  const DECK = [
+    { k: "open", t: "Opening", s: "Summer is when people ride further." },
+    { k: "prob", t: "The problem", s: "Most riders stop at twenty kilometres." },
+    { k: "idea", t: "The idea", s: "Make the next twenty a story." },
+    { k: "proof", t: "Proof", s: "Three routes, three films." },
+    { k: "ask", t: "The ask", s: "Approve the pilot route." },
+  ];
+  const deck = async () => {
+    await show("geometer", [.5, .5], "V · The Geometer");
+    await say("The Geometer", "I have no face, {name}. Only a measure. Every brief has a shape hidden in it, and I find it.");
+    await say("The Geometer", "Your brief: pitch a summer campaign to a cycling brand. Here are its five tablets, out of order. Set them along my measure, first to last.");
+    let tries = 0;
+    await pend((ok) => {
+      setTask("Find the shape", "Drag each tablet onto the measure, from I to V. Drop on a full place to swap.");
+      const SL = [[82, 16], [82, 31], [82, 46], [82, 61], [82, 76]];
+      const slots = SL.map(([x, y], i) => { const s = el("div", "slot"); s.dataset.n = ["I", "II", "III", "IV", "V"][i]; pos(s, x, y); s.card = null; return s; });
+      const START = [[14, 22, -7], [28, 40, 5], [12, 58, -4], [27, 74, 8], [41, 86, -6]];
+      const order = [3, 0, 4, 1, 2];
+      const cards = order.map((di, i) => { const d = DECK[di]; const c = el("div", "tablet", `<b>${d.t}</b><span>${d.s}</span>`, { "--r": START[i][2] + "deg" }); pos(c, START[i][0], START[i][1]); c.dataset.k = d.k; c.home = START[i]; c.slot = null; return c; });
+      const check = () => {
+        if (!slots.every((s) => s.card)) return;
+        tries++;
+        const wrong = slots.filter((s, i) => s.card.dataset.k !== DECK[i].k);
+        slots.forEach((s) => s.card.classList.toggle("wrong", wrong.includes(s)));
+        if (!wrong.length) { S.deckTries = tries; cards.forEach((c, i) => later(() => c.classList.add("written"), i * 220)); taskText("The shape is true. The Geometer writes the words."); later(ok, 2200); }
+        else taskText(`${wrong.length} tablet${wrong.length > 1 ? "s are" : " is"} out of shape. A story opens, then troubles, then turns, then proves, then asks.`);
+      };
+      const assign = (c, s) => {
+        const prev = s.card, from = c.slot;
+        if (from) from.card = null;
+        if (prev && prev !== c) { if (from) { from.card = prev; prev.slot = from; pos(prev, parseFloat(from.style.getPropertyValue("--x")), parseFloat(from.style.getPropertyValue("--y"))); } else { prev.slot = null; prev.classList.remove("placed", "wrong"); pos(prev, prev.home[0], prev.home[1]); } }
+        s.card = c; c.slot = s; c.classList.add("placed"); c.classList.remove("sel"); selected = null;
+        pos(c, parseFloat(s.style.getPropertyValue("--x")), parseFloat(s.style.getPropertyValue("--y")));
+        check(); return true;
+      };
+      const near = (x, y) => slots.find((s) => Math.abs(parseFloat(s.style.getPropertyValue("--x")) - x) < 9 && Math.abs(parseFloat(s.style.getPropertyValue("--y")) - y) < 7);
+      cards.forEach((c) => draggable(c, { onDrop: (n, x, y) => { const s = near(x, y); return s ? assign(n, s) : false; } }));
+      slots.forEach((s) => on(s, "click", () => { if (selected && selected.classList.contains("tablet")) assign(selected, s); }));
+    });
+    await say("The Geometer", tries === 1 ? "True on the first measure. Then I wrote the words to fit the shape, as I always do." : `True after ${tries} measures. Then I wrote the words to fit the shape, as I always do.`);
+    await show("messenger", [.5, .4], "V · The Messenger");
+    await say("The Messenger", "And I carry it. Your deck is under my arm, {name}, and I am already halfway to the client.");
+  };
+
+  /* ============================================================ VI · TYPE TOOL — draw the gust */
+  const type = async () => {
+    await show("wind", [.5, .5], "VI · The Wind");
+    await say("The Wind", "I cannot be still, {name}, and nothing I write is still either.");
+    S.word = (await ask("The Wind", "Give me a word to carry.", S.name ? S.name.toUpperCase() : "CYLOS")).toUpperCase().slice(0, 18); save();
+    await say("The Wind", "Now draw my gust. Wherever your hand goes, your letters will follow.");
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg"); svg.setAttribute("class", "gust"); svg.setAttribute("viewBox", "0 0 1300 867"); svg.setAttribute("preserveAspectRatio", "none"); fx.append(svg);
+    const trail = document.createElementNS(NS, "polyline"); trail.setAttribute("class", "trail"); svg.append(trail);
+    const path = document.createElementNS(NS, "path"); path.id = "gust-p"; path.setAttribute("fill", "none"); svg.append(path);
+    const mk = () => { const t = document.createElementNS(NS, "text"), tp = document.createElementNS(NS, "textPath"); tp.setAttribute("href", "#gust-p"); t.append(tp); svg.append(t); return tp; };
+    const ta = mk(), tb = mk();
+    let L = 0, off = 0, flowing = false, last = 0;
+    const flow = (t) => { if (!flowing) return; const dt = Math.min(.05, (t - last) / 1000 || 0); last = t; off = (off + 170 * dt) % L; ta.setAttribute("startOffset", off); tb.setAttribute("startOffset", off - L); requestAnimationFrame(flow); };
+    await pend((ok) => {
+      setTask("Draw the gust", "Press and draw a long, sweeping line across the relief.", `<button class="btn light" id="w-ok" type="button" disabled>Let it fly</button>`);
+      let pts = null;
+      const P = (e) => { const p = toBox(e); return [p.x * 13, p.y * 8.667]; };
+      on(svg, "pointerdown", (e) => { e.preventDefault(); cap(svg, e); pts = [P(e)]; flowing = false; ta.textContent = tb.textContent = ""; trail.setAttribute("points", ""); });
+      on(svg, "pointermove", (e) => { if (!pts) return; const q = P(e), l = pts[pts.length - 1]; if (Math.hypot(q[0] - l[0], q[1] - l[1]) > 10) { pts.push(q); trail.setAttribute("points", pts.map((p) => p.join(",")).join(" ")); } });
+      on(svg, "pointerup", () => {
+        if (!pts || pts.length < 4) { pts = null; return; }
+        path.setAttribute("d", "M " + pts.map((p) => p.map((v) => v.toFixed(1)).join(" ")).join(" L "));
+        L = path.getTotalLength(); pts = null;
+        if (L < 500) { taskText("Longer. The wind needs room to carry a word."); return; }
+        trail.setAttribute("points", "");
+        const unit = S.word + " · "; ta.textContent = unit; const one = ta.getComputedTextLength() || 200;
+        const s = unit.repeat(Math.max(1, Math.floor(L / one))); ta.textContent = tb.textContent = s;
+        for (const tp of [ta, tb]) { tp.parentNode.setAttribute("textLength", L); tp.parentNode.setAttribute("lengthAdjust", "spacing"); }
+        flowing = true; last = performance.now(); requestAnimationFrame(flow);
+        taskText("It flies. Draw again to change the gust, or let it go."); $("#w-ok").disabled = false;
+      });
+      on($("#w-ok"), "click", () => ok());
+    });
+    flowing = false;
+    await show("hare", [.35, .5], "VI · The Hare");
+    await say("The Hare", `Your word ran so fast it stopped being letters. “${S.word}” turned to water, then to flame, then to a bird.`);
+    await say("The Wind", "That is what I do with words, {name}. I give them somewhere to go.");
+  };
+
+  /* ============================================================ the seventh head */
+  const finale = async () => {
+    try {
+      abortAll(); $("#to-map").hidden = true;
+      await show("watcher", [.22, .5], "The cliff");
+      await say("The Watcher", "Six heads awake, {name}. You have done what I sat here waiting for.");
+      await show("eagle", [.5, .3], "The seventh head");
+      setMode("fit"); hideDlg();
+      for (const t of TOOLS) { await wait(450); const s = el("button", "spot lit", ""); pos(s, t.head[0], t.head[1]); s.tabIndex = -1; const g = el("div", "tag" + (t.head[1] > 40 ? " below" : ""), `<b>${t.n} · ${t.tool}</b>`); pos(g, t.head[0], t.head[1]); later(() => g.remove(), 1400); }
+      await wait(900);
+      const sv = el("button", "spot lit", ""); pos(sv, SEVENTH[0], SEVENTH[1]); sv.tabIndex = -1;
+      drawHeads(true); $("#title").classList.add("on"); await wait(3600); $("#title").classList.remove("on");
+      await say("The Watcher", "The seventh head is the one that sees through all the others. It is the suite itself. It is CYLOS.");
+      await show("psyche", [.5, .3], "Epilogue");
+      await say("The Watcher", "And the maker who climbed my cliff was changed. Here is what you did, {name}.");
+      await say("The Chronicle", `You searched the tortoise's shell and cited the two carvings that answered. You weighed ${S.judged} of six offerings true for the serpent, and the peacock fanned the chosen one into four formats.`);
+      await say("The Chronicle", `You told a story in five scenes, beginning with “${S.shots[0] || "the ship"}”, and held the ring in the living band until it moved. You left “${S.tool}” on the mantis's shelf.`);
+      await say("The Chronicle", `You found the shape of a pitch${S.deckTries > 1 ? ` in ${S.deckTries} measures` : " on the first measure"}, and you gave the wind “${S.word}” to carry.`);
+      await say("The Watcher", "You will never make alone again. Open the Codex to see each head for what it really is.");
+      drawCodex(); codex.classList.add("on");
+      $("#chapter").textContent = "The Trials of CYLOS";
+    } catch (e) { if (e !== ABORT) throw e; }
+  };
+
+  /* go */
+  layout(); drawHeads(); veil.classList.add("off");
+  const start = () => main();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(start); else start();
+})();
+</script>
